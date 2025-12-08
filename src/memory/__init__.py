@@ -16,10 +16,15 @@ def initialize_database() -> AbstractAsyncContextManager[
     """
     Initialize the appropriate database checkpointer based on configuration.
     Returns an initialized AsyncCheckpointer instance.
+    
+    Uses CHECKPOINTER_DB_TYPE if set, otherwise falls back to DATABASE_TYPE for backward compatibility.
     """
-    if settings.DATABASE_TYPE == DatabaseType.POSTGRES:
+    # Use CHECKPOINTER_DB_TYPE if explicitly set, otherwise use DATABASE_TYPE
+    db_type = settings.CHECKPOINTER_DB_TYPE or settings.DATABASE_TYPE
+    
+    if db_type == DatabaseType.POSTGRES:
         return get_postgres_saver()
-    if settings.DATABASE_TYPE == DatabaseType.MONGO:
+    if db_type == DatabaseType.MONGO:
         return get_mongo_saver()
     else:  # Default to SQLite
         return get_sqlite_saver()
@@ -29,11 +34,16 @@ def initialize_store():
     """
     Initialize the appropriate store based on configuration.
     Returns an async context manager for the initialized store.
+    
+    Uses STORE_DB_TYPE if set, otherwise falls back to DATABASE_TYPE for backward compatibility.
     """
-    if settings.DATABASE_TYPE == DatabaseType.POSTGRES:
+    # Use STORE_DB_TYPE if explicitly set, otherwise use DATABASE_TYPE
+    db_type = settings.STORE_DB_TYPE or settings.DATABASE_TYPE
+    
+    if db_type == DatabaseType.POSTGRES:
         return get_postgres_store()
     # TODO: Add Mongo store - https://pypi.org/project/langgraph-store-mongodb/
-    else:  # Default to SQLite
+    else:  # Default to SQLite (which uses InMemoryStore)
         return get_sqlite_store()
 
 

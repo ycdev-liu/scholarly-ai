@@ -1,5 +1,7 @@
 from langchain_core.messages import BaseMessage
+# RunnableConfig 是 LangChain 中用于配置可运行对象的抽象基类
 from langchain_core.runnables import RunnableConfig
+
 from langgraph.func import entrypoint
 
 from core import get_model, settings
@@ -18,6 +20,7 @@ async def chatbot(
 
     model = get_model(config["configurable"].get("model", settings.DEFAULT_MODEL))
     response = await model.ainvoke(messages)
+    
     return entrypoint.final(
         value={"messages": [response]}, save={"messages": messages + [response]}
     )

@@ -13,7 +13,17 @@ import os
 from pathlib import Path
 from typing import Optional
 
+from langchain_community.embeddings import NeMoEmbeddings
+
 from core.settings import LogLevel, settings
+
+
+class FlushingRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """自动刷新的 RotatingFileHandler，每次写入后立即刷新到磁盘"""
+    def emit(self, record):
+        """重写 emit 方法，确保每次写入后立即刷新"""
+        super().emit(record)
+        self.flush()  # 每次写入后立即刷新
 
 
 def setup_logging(
@@ -24,7 +34,8 @@ def setup_logging(
     enable_console_logging: bool = True,
     max_bytes: int = 10 * 1024 * 1024,  # 10MB
     backup_count: int = 5,
-) -> None:
+    root_logger: Optional[logging.Logger] = None,
+) -> logging.Logger:
     """
     配置项目日志系统
 
@@ -54,11 +65,15 @@ def setup_logging(
         log_file_path = log_path / log_file
     
     # 配置根日志记录器
-    root_logger = logging.getLogger()
+    if root_logger == None:
+        root_logger = logging.getLogger()
+    else:
+        root_logger = root_logger
     root_logger.setLevel(level)
     
     # 清除现有的处理器
     root_logger.handlers.clear()
+
     
     # 定义日志格式
     detailed_format = logging.Formatter(
@@ -78,17 +93,20 @@ def setup_logging(
         console_handler.setFormatter(simple_format)
         root_logger.addHandler(console_handler)
     
-    # 文件处理器（带轮转）
+    # 文件处理器（带轮转）- 使用自动刷新的 Handler
     if enable_file_logging:
-        file_handler = logging.handlers.RotatingFileHandler(
+        file_handler = FlushingRotatingFileHandler(
             filename=str(log_file_path),
             maxBytes=max_bytes,
             backupCount=backup_count,
             encoding="utf-8",
+            delay=False,  # 立即打开文件
         )
         file_handler.setLevel(level)
         file_handler.setFormatter(detailed_format)
         root_logger.addHandler(file_handler)
+        # 初始化时也刷新一次
+        file_handler.flush()
     
     # 设置第三方库的日志级别
     logging.getLogger("httpx").setLevel(logging.WARNING)
@@ -97,6 +115,7 @@ def setup_logging(
     logging.getLogger("openai").setLevel(logging.WARNING)
     
     root_logger.info(f"日志系统已初始化，级别: {log_level.value}")
+    return root_logger
 
 
 def get_logger(name: str) -> logging.Logger:

@@ -122,7 +122,13 @@ class Settings(BaseSettings):
     # Database Configuration
     DATABASE_TYPE: DatabaseType = (
         DatabaseType.SQLITE
-    )  # Options: DatabaseType.SQLITE or DatabaseType.POSTGRES
+    )  # Options: DatabaseType.SQLITE or DatabaseType.POSTGRES (deprecated: use CHECKPOINTER_DB_TYPE and STORE_DB_TYPE instead)
+    
+    # Separate database types for checkpointer (short-term memory) and store (long-term memory)
+    # If not set, falls back to DATABASE_TYPE for backward compatibility
+    CHECKPOINTER_DB_TYPE: DatabaseType | None = None  # Database type for checkpointer (conversation history)
+    STORE_DB_TYPE: DatabaseType | None = None  # Database type for store (long-term memory)
+    
     SQLITE_DB_PATH: str = "checkpoints.db"
 
     # PostgreSQL Configuration

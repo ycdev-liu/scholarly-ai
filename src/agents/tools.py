@@ -58,6 +58,7 @@ calculator.name = "Calculator"
 def format_contexts(docs):
     return "\n\n".join(doc.page_content for doc in docs)
 
+
 def get_embeddings():
     """Get the embeddings for the local model or OpenAi model."""
     global _embeddings_cache
@@ -103,6 +104,7 @@ def get_embeddings():
                         # 如果离线模式失败，尝试在线模式
                         logger.warning("Retrying without offline mode...")
                         os.environ.pop("HF_HUB_OFFLINE", None)
+                        
                         _embeddings_cache = HuggingFaceEmbeddings(
                             model_name=model_name,
                             cache_folder=catche_folder,

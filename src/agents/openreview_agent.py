@@ -2,6 +2,10 @@ from datetime import datetime
 from typing import Literal
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import AIMessage, SystemMessage
+# RunnableConfig 是 LangChain 中用于配置可运行对象的抽象基类
+# RunnableLambda 是 LangChain 中用于将函数转换为可运行对象的类
+# RunnableSerializable 是 LangChain 中用于将可运行对象转换为可序列化的类
+
 from langchain_core.runnables import RunnableConfig, RunnableLambda, RunnableSerializable
 from langgraph.graph import END, MessagesState, StateGraph
 from langgraph.managed import RemainingSteps
@@ -10,6 +14,7 @@ from langgraph.prebuilt import ToolNode
 from agents.llama_guard import LlamaGuard, LlamaGuardOutput, SafetyAssessment
 from agents.tools import openreview_search, download_paper, download_paper_from_arxiv
 from core import get_model, settings
+
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -125,7 +130,7 @@ async def block_unsafe_content(state: AgentState, config: RunnableConfig) -> Age
 
 
 # Define the graph
-agent = StateGraph(AgentState)
+agent = StateGraph[AgentState, AgentState, AgentState](AgentState)
 agent.add_node("guard_input", llama_guard_input)
 agent.add_node("block_unsafe_content", block_unsafe_content)
 agent.add_node("model", acall_model)

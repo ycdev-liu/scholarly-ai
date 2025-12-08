@@ -1,3 +1,4 @@
+# cache 是 functools 模块中的一个装饰器，用于缓存函数的结果，避免重复计算
 from functools import cache
 from typing import TypeAlias
 
@@ -11,6 +12,7 @@ from langchain_ollama import ChatOllama
 from langchain_openai import AzureChatOpenAI, ChatOpenAI
 
 from core.settings import settings
+
 from schema.models import (
     AllModelEnum,
     AnthropicModelName,
@@ -74,6 +76,7 @@ def get_model(model_name: AllModelEnum, /) -> ModelT:
 
     if model_name in OpenAIModelName:
         return ChatOpenAI(model=api_model_name, temperature=0.5, streaming=True)
+        
     if model_name in OpenAICompatibleName:
         if not settings.COMPATIBLE_BASE_URL or not settings.COMPATIBLE_MODEL:
             raise ValueError("OpenAICompatible base url and endpoint must be configured")

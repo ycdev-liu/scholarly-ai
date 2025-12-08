@@ -17,4 +17,7 @@ COPY src/schema/ ./schema/
 COPY src/service/ ./service/
 COPY src/run_service.py .
 
+# Create data directory for SQLite database
+RUN mkdir -p /app/data
+
 CMD ["python", "run_service.py"]

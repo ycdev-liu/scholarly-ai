@@ -20,10 +20,14 @@ from langfuse import Langfuse  # type: ignore[import-untyped]
 from langfuse.callback import CallbackHandler  # type: ignore[import-untyped]
 from langgraph.types import Command, Interrupt
 from langsmith import Client as LangsmithClient
+from sympy import im
 
 from agents import DEFAULT_AGENT, AgentGraph, get_agent, get_all_agent_info, load_agent
 from core import settings
-
+from core import setup_logging
+import logging
+from core.settings import LogLevel
+import logging
 from memory import initialize_database, initialize_store
 from schema import (
     ChatHistory,
@@ -42,8 +46,11 @@ from service.utils import (
 )
 
 warnings.filterwarnings("ignore", category=LangChainBetaWarning)
-logger = logging.getLogger(__name__)
 
+
+logger=logging.getLogger(__name__)
+
+logger=setup_logging(log_level=LogLevel.INFO, log_file="service.log", log_dir="./logs", enable_file_logging=True, enable_console_logging=False,root_logger=logger)
 
 def custom_generate_unique_id(route: APIRoute) -> str:
     """Generate idiomatic operation IDs for OpenAPI client generation."""
@@ -63,8 +70,15 @@ def verify_bearer(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
 
 
+
+# 生命周期管理
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    logger.info(f"kife checkpointer initialized successfully")
+    logger.debug(f"lifespan started")
+    logger.warning(f"lifespan started")
+    logger.error(f"lifespan started")
+    logger.critical(f"lifespan started")
     """
     Configurable lifespan that initializes the appropriate database checkpointer, store,
     and agents with async loading - for example for starting up MCP clients.
@@ -75,9 +89,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             # Set up both components
             if hasattr(saver, "setup"):  # ignore: union-attr
                 await saver.setup()
+                logger.info(f"Database checkpointer initialized successfully (type: {type(saver).__name__})")
+            else:
+                logger.info(f"Database checkpointer initialized (type: {type(saver).__name__}, no setup required)")
+            
             # Only setup store for Postgres as InMemoryStore doesn't need setup
             if hasattr(store, "setup"):  # ignore: union-attr
                 await store.setup()
+                logger.info(f"Store initialized successfully (type: {type(store).__name__})")
+            else:
+                logger.info(f"Store initialized (type: {type(store).__name__}, no setup required)")
 
             # Configure agents with both memory components and async loading
             agents = get_all_agent_info()
@@ -94,6 +115,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 agent.checkpointer = saver
                 # Set store for long-term memory (cross-conversation knowledge)
                 agent.store = store
+            
+            # Test database connection after agents are configured
+            try:
+                test_config = RunnableConfig(configurable={"thread_id": "__init_test__"})
+                # Try to get state (this will test the database connection)
+                test_agent = get_agent(DEFAULT_AGENT)
+                if hasattr(test_agent, "aget_state"):
+                    test_state = await test_agent.aget_state(config=test_config)
+                    logger.info("Database connection test successful - checkpointer is working")
+                else:
+                    logger.debug("Database connection test skipped (agent does not support state query)")
+            except Exception as e:
+                logger.warning(f"Database connection test failed (this may be normal on first run): {e}")
+            logger.info("All agents configured with memory components successfully")
             yield
     except Exception as e:
         logger.error(f"Error during database/store/agents initialization: {e}")
@@ -185,11 +220,7 @@ async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMe
     is also attached to messages for recording feedback.
     Use user_id to persist and continue a conversation across multiple threads.
     """
-    # NOTE: Currently this only returns the last message or interrupt.
-    # In the case of an agent outputting multiple AIMessages (such as the background step
-    # in interrupt-agent, or a tool step in research-assistant), it's omitted. Arguably,
-    # you'd want to include it. You could update the API to return a list of ChatMessages
-    # in that case.
+
     agent: AgentGraph = get_agent(agent_id)
     kwargs, run_id = await _handle_input(user_input, agent)
 
@@ -243,9 +274,7 @@ async def message_generator(
             new_messages = []
             if stream_mode == "updates":
                 for node, updates in event.items():
-                    # A simple approach to handle agent interrupts.
-                    # In a more sophisticated implementation, we could add
-                    # some structured ChatMessage type to return the interrupt value.
+                    
                     if node == "__interrupt__":
                         interrupt: Interrupt
                         for interrupt in updates:
@@ -270,10 +299,6 @@ async def message_generator(
             if stream_mode == "custom":
                 new_messages = [event]
 
-            # LangGraph streaming may emit tuples: (field_name, field_value)
-            # e.g. ('content', <str>), ('tool_calls', [ToolCall,...]), ('additional_kwargs', {...}), etc.
-            # We accumulate only supported fields into `parts` and skip unsupported metadata.
-            # More info at: https://langchain-ai.github.io/langgraph/cloud/how-tos/stream_messages/
             processed_messages = []
             current_message: dict[str, Any] = {}
             for message in new_messages:
@@ -375,13 +400,7 @@ async def stream(user_input: StreamInput, agent_id: str = DEFAULT_AGENT) -> Stre
 
 @router.post("/feedback")
 async def feedback(feedback: Feedback) -> FeedbackResponse:
-    """
-    Record feedback for a run to LangSmith.
 
-    This is a simple wrapper for the LangSmith create_feedback API, so the
-    credentials can be stored and managed in the service rather than the client.
-    See: https://api.smith.langchain.com/redoc#tag/feedback/operation/create_feedback_api_v1_feedback_post
-    """
     client = LangsmithClient()
     kwargs = feedback.kwargs or {}
     client.create_feedback(
@@ -414,7 +433,9 @@ async def history(input: ChatHistoryInput) -> ChatHistory:
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
+    logger=logging.getLogger(__name__)
+
+    logger=setup_logging(log_level=LogLevel.INFO, log_file="service.log", log_dir="./logs", enable_file_logging=True, enable_console_logging=False,root_logger=logger)
 
     health_status = {"status": "ok"}
 
@@ -425,6 +446,80 @@ async def health_check():
         except Exception as e:
             logger.error(f"Langfuse connection error: {e}")
             health_status["langfuse"] = "disconnected"
+
+    # Check database status (checkpointer and store separately)
+    try:
+        from core.settings import DatabaseType
+        from pathlib import Path
+        
+        db_info: dict[str, Any] = {}
+        
+        # Get actual database types being used
+        checkpointer_type = settings.CHECKPOINTER_DB_TYPE or settings.DATABASE_TYPE
+        store_type = settings.STORE_DB_TYPE or settings.DATABASE_TYPE
+        
+        # Checkpointer status (short-term memory)
+        checkpointer_info: dict[str, Any] = {
+            "type": checkpointer_type.value,
+            "purpose": "short-term memory (conversation history)"
+        }
+        
+        if checkpointer_type == DatabaseType.SQLITE:
+            db_path = Path(settings.SQLITE_DB_PATH)
+            checkpointer_info["file_exists"] = str(db_path.exists())
+            if db_path.exists():
+                checkpointer_info["file_size"] = f"{db_path.stat().st_size} bytes"
+                checkpointer_info["file_path"] = str(db_path)
+        
+        # Test checkpointer connection
+        try:
+            test_agent = get_agent(DEFAULT_AGENT)
+            if hasattr(test_agent, "checkpointer") and getattr(test_agent, "checkpointer", None):
+                test_config = RunnableConfig(configurable={"thread_id": "__health_check__"})
+                if hasattr(test_agent, "aget_state"):
+                    await test_agent.aget_state(config=test_config)  # type: ignore[attr-defined]
+                    checkpointer_info["connection"] = "ok"
+                else:
+                    checkpointer_info["connection"] = "not_supported"
+            else:
+                checkpointer_info["connection"] = "not_configured"
+        except Exception as e:
+            checkpointer_info["connection"] = f"error: {str(e)[:50]}"
+        
+        db_info["checkpointer"] = checkpointer_info
+        
+        # Store status (long-term memory)
+        store_info: dict[str, Any] = {
+            "type": store_type.value,
+            "purpose": "long-term memory (cross-conversation knowledge)"
+        }
+        
+        if store_type == DatabaseType.POSTGRES:
+            store_info["host"] = str(settings.POSTGRES_HOST or "not_configured")
+            store_info["database"] = str(settings.POSTGRES_DB or "not_configured")
+            # Test PostgreSQL connection if configured
+            if settings.POSTGRES_HOST and settings.POSTGRES_DB:
+                try:
+                    test_agent = get_agent(DEFAULT_AGENT)
+                    if hasattr(test_agent, "store") and getattr(test_agent, "store", None):
+                        store_info["connection"] = "ok"
+                    else:
+                        store_info["connection"] = "not_configured"
+                except Exception as e:
+                    store_info["connection"] = f"error: {str(e)[:50]}"
+            else:
+                store_info["connection"] = "not_configured"
+        elif store_type == DatabaseType.SQLITE:
+            store_info["note"] = "Using InMemoryStore (data not persisted)"
+            store_info["connection"] = "ok"
+        else:
+            store_info["connection"] = "unknown"
+        
+        db_info["store"] = store_info
+        
+        health_status["database"] = db_info
+    except Exception as e:
+        health_status["database"] = {"error": str(e)[:100]}
 
     return health_status
 
