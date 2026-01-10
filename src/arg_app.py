@@ -15,8 +15,7 @@ from schema.task_data import TaskData, TaskDataStatus
 import tempfile
 import shutil
 from pathlib import Path
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_chroma import Chroma
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import Docx2txtLoader, PyPDFLoader, TextLoader
 
 
@@ -229,7 +228,7 @@ async def main() -> None:
             # 新增：数据库类型选择
             db_type = st.selectbox(
                 "数据库类型",
-                options=["qdrant", "chroma"],
+                options=["qdrant"],
                 index=0,  # 默认 Qdrant
                 help="选择要创建的向量数据库类型"
             )
@@ -299,7 +298,7 @@ async def main() -> None:
         with st.popover(":material/storage: 向量数据库管理", use_container_width=True):
             # 显示当前使用的数据库
             current_db_path = st.session_state.get("current_db_path", 
-                os.getenv("QDRANT_PATH") or os.getenv("CHROMA_DB_PATH", os.path.join(VECTOR_DB_BASE_DIR, "qdrant_db")))
+                os.getenv("QDRANT_PATH", os.path.join(VECTOR_DB_BASE_DIR, "qdrant_db")))
             current_db_type = st.session_state.get("current_db_type", 
                 os.getenv("VECTOR_DB_TYPE", "qdrant").lower())
             
@@ -331,7 +330,7 @@ async def main() -> None:
                     "选择向量数据库",
                     options=db_options,
                     index=default_index,
-                    help="选择要使用的向量数据库（🔷 QDRANT 或 🔶 CHROMA）"
+                    help="选择要使用的向量数据库（🔷 QDRANT）"
                 )
                 
                 # 获取选中的数据库信息
@@ -369,7 +368,7 @@ async def main() -> None:
                 **提示：**
                 - 使用"上传文件并创建向量数据库"功能可以创建新数据库
                 - 或者确保数据库文件存在于项目目录中
-                - 支持的数据库类型：ChromaDB 和 Qdrant
+                - 支持的数据库类型：Qdrant
                 """)
 
     # Draw existing messages
@@ -749,7 +748,7 @@ async def create_vector_db_from_files(
         use_local_embedding: 是否使用本地 embedding 模型（注意：单数形式）
         model_name: 模型名称
         auto_switch: 是否自动切换到新创建的数据库
-        db_type: 数据库类型 ("chroma" 或 "qdrant")
+        db_type: 数据库类型（只支持 "qdrant"）
     """
     # 确保统一文件夹存在
     os.makedirs(VECTOR_DB_BASE_DIR, exist_ok=True)
@@ -864,17 +863,10 @@ def get_available_databases() -> list[dict[str, str]]:
                 # 检测数据库类型
                 if os.path.exists(os.path.join(db_path, "config.json")):
                     databases.append({"path": db_path, "type": "qdrant"})
-                elif any(
-                    os.path.exists(os.path.join(db_path, item))
-                    for item in ["chroma.sqlite3", "chroma.sqlite3-wal", "index"]
-                ):
-                    databases.append({"path": db_path, "type": "chroma"})
+
     
     # 兼容旧路径（向后兼容）
     legacy_paths = [
-        "./chroma_db",
-        "./chroma_db_mixed",
-        "./chroma_db_uploaded",
         "./qdrant_db",
     ]
     
@@ -883,13 +875,6 @@ def get_available_databases() -> list[dict[str, str]]:
             # 检测数据库类型
             if os.path.exists(os.path.join(db_path, "config.json")):
                 db_type = "qdrant"
-                if not any(d["path"] == db_path for d in databases):
-                    databases.append({"path": db_path, "type": db_type})
-            elif any(
-                os.path.exists(os.path.join(db_path, item))
-                for item in ["chroma.sqlite3", "chroma.sqlite3-wal", "index"]
-            ):
-                db_type = "chroma"
                 if not any(d["path"] == db_path for d in databases):
                     databases.append({"path": db_path, "type": db_type})
     
@@ -913,17 +898,10 @@ def _get_available_databases_info() -> list[dict[str, str]]:
                 # 检测数据库类型
                 if os.path.exists(os.path.join(db_path, "config.json")):
                     databases.append({"path": db_path, "type": "qdrant"})
-                elif any(
-                    os.path.exists(os.path.join(db_path, item))
-                    for item in ["chroma.sqlite3", "chroma.sqlite3-wal", "index"]
-                ):
-                    databases.append({"path": db_path, "type": "chroma"})
+
     
     # 兼容旧路径（向后兼容）
     legacy_paths = [
-        "./chroma_db",
-        "./chroma_db_mixed",
-        "./chroma_db_uploaded",
         "./qdrant_db",
     ]
     
@@ -933,12 +911,6 @@ def _get_available_databases_info() -> list[dict[str, str]]:
             if os.path.exists(os.path.join(db_path, "config.json")):
                 if not any(d["path"] == db_path for d in databases):
                     databases.append({"path": db_path, "type": "qdrant"})
-            elif any(
-                os.path.exists(os.path.join(db_path, item))
-                for item in ["chroma.sqlite3", "chroma.sqlite3-wal", "index"]
-            ):
-                if not any(d["path"] == db_path for d in databases):
-                    databases.append({"path": db_path, "type": "chroma"})
     
     return sorted(databases, key=lambda x: x["path"]) if databases else []
 
@@ -968,17 +940,13 @@ async def switch_vector_database(
         if db_type is None:
             if "qdrant" in db_path.lower():
                 db_type = "qdrant"
-            elif "chroma" in db_path.lower():
-                db_type = "chroma"
             else:
                 # 尝试检查目录内容判断类型
                 if os.path.exists(os.path.join(db_path, "config.json")):
                     db_type = "qdrant"
-                elif os.path.exists(os.path.join(db_path, "chroma.sqlite3")):
-                    db_type = "chroma"
                 else:
-                    # 默认使用当前环境变量设置的类型
-                    db_type = os.getenv("VECTOR_DB_TYPE", "qdrant").lower()
+                    # 默认使用 Qdrant
+                    db_type = "qdrant"
         
         # 调用后端 API 切换数据库（修复：传递 db_type 和 collection_name）
         result = await agent_client.aswitch_vector_db(

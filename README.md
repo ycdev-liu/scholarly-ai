@@ -43,6 +43,7 @@
 ### 环境要求
 
 - Python 3.12+
+- Node.js 18+ (用于前端开发)
 - 至少一个 LLM API Key（OpenAI、Groq 等）
 
 ### 安装步骤
@@ -88,8 +89,13 @@ GROQ_API_KEY=your_groq_api_key
 # 启动 FastAPI 服务
 python src/run_service.py
 
-# 在另一个终端启动 Streamlit Web 界面
+# 在另一个终端启动 Streamlit Web 界面（可选）
 streamlit run src/streamlit_app.py
+
+# 在另一个终端启动 React 前端（可选）
+cd frontend
+npm install
+npm run dev
 ```
 
 **方式 2：使用 Docker**
@@ -99,7 +105,8 @@ docker compose watch
 ```
 
 访问：
-- Web 界面：http://localhost:8501
+- React 前端：http://localhost:5173
+- Streamlit 界面：http://localhost:8501
 - API 服务：http://localhost:8080
 - API 文档：http://localhost:8080/redoc
 
@@ -165,6 +172,17 @@ response = client.invoke("根据论文内容，PagedAttention 是什么？它如
 
 ```
 .
+├── frontend/                     # React 前端应用
+│   ├── src/
+│   │   ├── api/                 # API 客户端
+│   │   ├── components/          # React 组件
+│   │   │   ├── Chat/           # 聊天界面
+│   │   │   ├── Paper/          # 论文搜索
+│   │   │   ├── VectorDB/       # 向量数据库管理
+│   │   │   └── Layout/         # 布局组件
+│   │   ├── stores/             # Zustand 状态管理
+│   │   └── App.tsx             # 主应用
+│   └── package.json
 ├── src/
 │   ├── agents/                    # Agent 定义
 │   │   ├── paper_research_supervisor.py  # 监督者 Agent（推荐使用）
@@ -177,7 +195,7 @@ response = client.invoke("根据论文内容，PagedAttention 是什么？它如
 │   │   └── settings.py           # 设置管理
 │   ├── service/                  # FastAPI 服务
 │   ├── client/                   # 客户端
-│   └── streamlit_app.py          # Web 界面
+│   └── streamlit_app.py          # Streamlit Web 界面
 ├── data/                         # 数据目录
 │   ├── downloads/papers/         # 下载的论文 PDF
 │   └── vector_databases/         # 向量数据库存储
@@ -200,12 +218,24 @@ response = client.invoke("根据论文内容，PagedAttention 是什么？它如
 
 ## 技术栈
 
+### 后端
 - **LangGraph**: Agent 框架，实现多 Agent 协调
 - **FastAPI**: RESTful API 服务
-- **Streamlit**: Web 用户界面
 - **ChromaDB/Qdrant**: 向量数据库，存储论文向量
 - **LangChain**: LLM 集成和工具调用
 - **LlamaGuard**: 内容安全检查（可选）
+
+### 前端
+- **React 18+**: UI 框架
+- **TypeScript**: 类型安全
+- **Vite**: 构建工具
+- **Material-UI (MUI)**: UI 组件库
+- **React Router**: 路由管理
+- **Zustand**: 状态管理
+- **Axios**: HTTP 客户端
+
+### 其他界面
+- **Streamlit**: 传统 Web 用户界面（与 React 前端共存）
 
 ## 数据存储
 
@@ -218,17 +248,53 @@ response = client.invoke("根据论文内容，PagedAttention 是什么？它如
 
 ### 本地开发
 
+#### 后端开发
+
 ```sh
 # 创建虚拟环境
 uv sync --frozen
 source .venv/bin/activate  # Windows: .venv\Scripts\activate
 
-# 运行服务
+# 运行 FastAPI 服务
 python src/run_service.py
+```
 
-# 运行 Web 界面
+#### 前端开发
+
+```sh
+# 进入前端目录
+cd frontend
+
+# 安装依赖
+npm install
+
+# 配置环境变量（可选）
+cp .env.example .env
+# 编辑 .env 文件，设置 VITE_API_BASE_URL
+
+# 启动开发服务器
+npm run dev
+```
+
+前端开发服务器将在 http://localhost:5173 启动。
+
+#### Streamlit 界面（可选）
+
+```sh
+# 运行 Streamlit Web 界面
 streamlit run src/streamlit_app.py
 ```
+
+Streamlit 界面将在 http://localhost:8501 启动。
+
+### 前端构建
+
+```sh
+cd frontend
+npm run build
+```
+
+构建产物将输出到 `frontend/dist/` 目录，可以部署到静态文件服务器或集成到 FastAPI 服务中。
 
 ### 运行测试
 

@@ -1,15 +1,34 @@
-FROM python:3.12.3-slim
+FROM python:3.12.3-slim AS builder
 
 WORKDIR /app
 
 ENV UV_PROJECT_ENVIRONMENT="/usr/local/"
 ENV UV_COMPILE_BYTECODE=1
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
 
-COPY pyproject.toml .
-COPY uv.lock .
-RUN pip install --no-cache-dir uv
-RUN uv sync --frozen --no-install-project --no-dev
+# 安装 uv（使用 --no-cache-dir）
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir uv
 
+# 复制依赖文件
+COPY pyproject.toml uv.lock ./
+
+# 安装依赖（不安装项目本身，不安装开发依赖）
+RUN uv sync --frozen --no-install-project --no-dev && \
+    rm -rf /root/.cache/pip && \
+    rm -rf /root/.cache/uv
+
+# 最终阶段
+FROM python:3.12.3-slim
+
+WORKDIR /app
+
+# 从 builder 阶段复制已安装的依赖
+COPY --from=builder /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# 复制源代码
 COPY src/agents/ ./agents/
 COPY src/core/ ./core/
 COPY src/memory/ ./memory/
@@ -17,7 +36,9 @@ COPY src/schema/ ./schema/
 COPY src/service/ ./service/
 COPY src/run_service.py .
 
-# Create data directory for SQLite database
-RUN mkdir -p /app/data
+# 创建数据目录
+RUN mkdir -p /app/data && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache
 
 CMD ["python", "run_service.py"]

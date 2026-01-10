@@ -1,33 +1,13 @@
 version: "3.9"
 
 services:
-  # ------------
-  # Neo4j 知识图谱数据库
-  # ------------
-  neo4j:
-    image: neo4j:5.15
-    ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
-    environment:
-      - NEO4J_AUTH=neo4j/${NEO4J_PASSWORD:-knowledge123}
-      - NEO4J_PLUGINS=["apoc"]
-    volumes:
-      - neo4j_data:/data
-      - neo4j_logs:/logs
-    healthcheck:
-      test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "${NEO4J_PASSWORD:-knowledge123}", "RETURN 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   # -----------------------
   # PostgreSQL (长期记忆)
   # -----------------------
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine  # 使用 alpine 版本，更小
     ports:
-      - "5432:5432"
+      - "5432:5432"  # 暴露端口供本地应用连接
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
@@ -39,6 +19,19 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
+    # 限制日志大小
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"      # 减小到 5MB
+        max-file: "2"        # 只保留 2 个文件
+    # 限制容器资源
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 256M
 
   # -----------------------
   # etcd (Milvus metadata)
@@ -47,7 +40,7 @@ services:
     image: quay.io/coreos/etcd:v3.5.5
     environment:
       - ETCD_AUTO_COMPACTION_RETENTION=1
-      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_QUOTA_BACKEND_BYTES=2147483648  # 减小到 2GB
       - ETCD_HEARTBEAT_INTERVAL=500
       - ETCD_ELECTION_TIMEOUT=2500
     command:
@@ -55,9 +48,18 @@ services:
       - --advertise-client-urls=http://0.0.0.0:2379
       - --listen-client-urls=http://0.0.0.0:2379
     ports:
-      - "2379:2379"
+      - "2379:2379"  # 暴露端口供本地应用连接（如果需要）
     volumes:
       - etcd_data:/etcd
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   # -----------------------
   # MinIO (Milvus segment storage)
@@ -67,11 +69,21 @@ services:
     environment:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
-    command: server /data
+    command: server /data --console-address ":9001"
     ports:
-      - "9000:9000"
+      - "9000:9000"  # MinIO API 端口
+      - "9001:9001"  # MinIO Console 端口
     volumes:
       - minio_data:/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # -----------------------
   # Milvus 向量数据库
@@ -82,117 +94,28 @@ services:
       - etcd
       - minio
     ports:
-      - "19530:19530"
-      - "9091:9091"
+      - "19530:19530"  # Milvus 服务端口，供本地应用连接
+      - "9091:9091"    # Milvus 监控端口
     environment:
       - ETCD_ENDPOINTS=etcd:2379
       - MINIO_ADDRESS=minio:9000
     volumes:
       - milvus_data:/var/lib/milvus
-
-  # -----------------------
-  # Agent 后端主服务
-  # -----------------------
-  agent_service:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.service
-    ports:
-      - "8080:8080"
-    env_file:
-      - .env
-    environment:
-      - HOST=0.0.0.0
-      - PORT=8080
-
-      # PostgreSQL 长期记忆
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-
-      # Milvus 向量存储
-      - MILVUS_HOST=milvus
-      - MILVUS_PORT=19530
-
-    depends_on:
-      postgres:
-        condition: service_healthy
-      milvus:
-        condition: service_started
-
-    healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8080/info', timeout=5).raise_for_status()"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-    volumes:
-      - ./privatecredentials:/privatecredentials
-      - sqlite_data:/app/data
-
-    develop:
-      watch:
-        - path: src/agents/
-          action: sync+restart
-          target: /app/agents/
-        - path: src/schema/
-          action: sync+restart
-          target: /app/schema/
-        - path: src/service/
-          action: sync+restart
-          target: /app/service/
-        - path: src/core/
-          action: sync+restart
-          target: /app/core/
-        - path: src/memory/
-          action: sync+restart
-          target: /app/memory/
-
-  # -----------------------
-  # Streamlit 前端
-  # -----------------------
-  streamlit_app:
-    build:
-      context: .
-      dockerfile: docker/Dockerfile.app
-    ports:
-      - "8501:8501"
-    depends_on:
-      - agent_service
-    environment:
-      - AGENT_URL=http://agent_service:8080
-      - STREAMLIT_APP=${STREAMLIT_APP:-streamlit_app.py}
-
-    healthcheck:
-      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8501/healthz', timeout=5).raise_for_status()"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 30s
-
-    develop:
-      watch:
-        - path: src/client/
-          action: sync+restart
-          target: /app/client/
-        - path: src/schema/
-          action: sync+restart
-          target: /app/schema/
-        - path: src/streamlit_app.py
-          action: sync+restart
-          target: /app/streamlit_app.py
-        - path: src/arg_app.py
-          action: sync+restart
-          target: /app/arg_app.py
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
 # -----------------------
 # 持久化卷
 # -----------------------
 volumes:
   postgres_data:
-  sqlite_data:
   milvus_data:
   etcd_data:
   minio_data:
-  neo4j_data:
-  neo4j_logs:

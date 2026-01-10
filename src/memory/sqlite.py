@@ -5,14 +5,24 @@ from langgraph.store.memory import InMemoryStore
 
 from core.settings import settings
 
+from pathlib import Path
+
 
 def get_sqlite_saver() -> AbstractAsyncContextManager[AsyncSqliteSaver]:
     """Initialize and return a SQLite saver instance."""
-    return AsyncSqliteSaver.from_conn_string(settings.SQLITE_DB_PATH)
+    db_path = Path(settings.SQLITE_DB_PATH)
+    
+    # 确保目录存在
+    if not db_path.is_absolute():
+        db_path = Path.cwd() / db_path
+    
+    # 创建父目录（如果不存在）
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    
+    return AsyncSqliteSaver.from_conn_string(str(db_path))
 
 
 class AsyncInMemoryStore:
-    """Wrapper for InMemoryStore that provides an async context manager interface."""
 
     def __init__(self):
         self.store = InMemoryStore()

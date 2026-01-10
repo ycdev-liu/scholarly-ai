@@ -1,13 +1,103 @@
+# Git
 .git
 .gitignore
-.env
-**/__pycache__
-**/*.pyc
-**/*.pyo
-**/*.pyd
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
 .Python
-env
-venv
-.venv
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Logs
+logs/
+*.log
+*.log.*
+
+# Data files (should be mounted as volumes)
+data/
+checkpoints.db
+checkpoints.db-*
 *.db
-privatecredentials/*
+*.sqlite
+*.sqlite3
+
+# Vector databases (should be mounted as volumes)
+chroma_db*/
+qdrant_db/
+vector_databases/
+
+# Embedding models (should be mounted as volumes or downloaded at runtime)
+embedding.model/
+
+# Test files
+tests/
+test_*.py
+*_test.py
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Documentation
+*.md
+!README.md
+docs/
+DOCKER_*.md
+
+# Scripts (not needed in Docker)
+scripts/
+get_local_model.py
+docker-start.ps1
+
+# Private credentials
+privatecredentials/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# UV package manager cache
+.uv/
+
+# Media files
+media/
+
+# Docker files (don't copy into image)
+docker/
+compose.yaml
+docker-compose.yml

@@ -364,7 +364,7 @@ class AgentClient:
     async def aupload_files_and_create_vector_db(
         self,
         files: List[tuple],  # List of (filename, file_content) tuples
-        db_name: str = "chroma_db_uploaded",
+        db_name: str = "qdrant_db_uploaded",
         chunk_size: int = 2000,
         overlap: int = 500,
         use_local_embedding: bool = True,
@@ -417,7 +417,7 @@ class AgentClient:
     def upload_files_and_create_vector_db(
         self,
         files: List[tuple],
-        db_name: str = "chroma_db_uploaded",
+        db_name: str = "qdrant_db_uploaded",
         chunk_size: int = 2000,
         overlap: int = 500,
         use_local_embedding: bool = False,
@@ -453,7 +453,7 @@ class AgentClient:
         
         Args:
             db_path: 新的数据库路径
-            db_type: 数据库类型 ("chroma" 或 "qdrant")
+            db_type: 数据库类型（只支持 "qdrant"）
             collection_name: 集合名（仅 Qdrant 需要）
         """
         data = {

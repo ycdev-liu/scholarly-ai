@@ -4,8 +4,7 @@ from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_core.prompts import PromptTemplate
 from pydantic import BaseModel, Field
 
-from core import get_model, settings
-from schema.models import GroqModelName
+from core import settings
 
 
 class SafetyAssessment(Enum):
@@ -77,13 +76,11 @@ def parse_llama_guard_output(output: str) -> LlamaGuardOutput:
 
 class LlamaGuard:
     def __init__(self) -> None:
-        if settings.GROQ_API_KEY is None:
-            print("GROQ_API_KEY not set, skipping LlamaGuard")
-            self.model = None
-            return
-        self.model = get_model(GroqModelName.LLAMA_GUARD_4_12B).with_config(tags=["skip_stream"])
-        
-        
+        # LlamaGuard requires a specific model, but we'll disable it if not available
+        # For now, we'll skip LlamaGuard since it requires Groq's LlamaGuard model
+        # which is not available with OpenAI-only setup
+        print("LlamaGuard disabled: requires Groq's LlamaGuard model (not available with OpenAI-only setup)")
+        self.model = None
         self.prompt = PromptTemplate.from_template(llama_guard_instructions)
 
     def _compile_prompt(self, role: str, messages: list[AnyMessage]) -> str:
@@ -105,6 +102,8 @@ class LlamaGuard:
         if self.model is None:
             return LlamaGuardOutput(safety_assessment=SafetyAssessment.SAFE)
         compiled_prompt = self._compile_prompt(role, messages)
+        if self.model is None:  # Type guard
+            return LlamaGuardOutput(safety_assessment=SafetyAssessment.SAFE)
         result = await self.model.ainvoke([HumanMessage(content=compiled_prompt)])
         return parse_llama_guard_output(str(result.content))
 

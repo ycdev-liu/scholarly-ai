@@ -51,7 +51,7 @@ instructions = f"""
     4. Switch_Vector_DB - Switch to a different vector database
        - Use this when the user wants to switch to a different database
        - Requires the database path (can be obtained from Get_Vector_DB_Info)
-       - Optionally specify db_type ("chroma" or "qdrant") and collection_name (for Qdrant)
+       - Optionally specify db_type (only "qdrant" supported) and collection_name
        - After switching, Database_Search will use the new database
     5. List_Downloaded_Papers - List all PDF files in ./data/downloads/papers/
        - Use this to see what papers are available before creating a vector database

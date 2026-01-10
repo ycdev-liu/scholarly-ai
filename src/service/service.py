@@ -538,9 +538,7 @@ from typing import List
 from pathlib import Path
 import os
 import shutil
-from langchain_chroma import Chroma
-
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 import tempfile
 from langchain_community.document_loaders import (
     Docx2txtLoader,
@@ -550,9 +548,9 @@ from langchain_community.document_loaders import (
 )
 
 @router.post("/vector-db/upload")
-async def upload_files_to_chroma_db(
+async def upload_files_to_vector_db(
     files: List[UploadFile]=File(...),
-    db_name:str=Form("chroma_db_uploader"),
+    db_name:str=Form("qdrant_db_uploader"),
     chunk_size:int = Form(2000),
     overlap:int =  Form(500),
     use_local_embedding : bool = Form(True),
@@ -580,18 +578,52 @@ async def upload_files_to_chroma_db(
                     f.write(content)
                 saved_files.append(file_path)
  
-            os.environ.setdefault("HF_HUB_OFFLINE", "1")
-            
             if use_local_embedding:
                 from langchain_community.embeddings import HuggingFaceEmbeddings
-                cache_folder = os.path.join(os.getcwd(),"embedding.model")
-
-                embeddings = HuggingFaceEmbeddings(
-                    model_name = model_name,
-                    cache_folder = cache_folder,
-                    model_kwargs = {"device": "cpu"},
-                    encode_kwargs = {"normalize_embeddings": True},
-                )
+                from core.settings import settings
+                # 使用统一的配置路径
+                cache_folder = settings.EMBEDDING_MODEL_CACHE_DIR
+                # 如果是相对路径，转换为绝对路径（相对于项目根目录）
+                if not os.path.isabs(cache_folder):
+                    cache_folder = os.path.join(os.getcwd(), cache_folder.lstrip("./"))
+                
+                # 检查本地是否已有模型（优先使用本地模型）
+                model_dir_name = f"models--{model_name.replace('/', '--')}"
+                model_path = os.path.join(cache_folder, "hub", model_dir_name)
+                local_model_exists = os.path.exists(model_path) and os.path.isdir(model_path)
+                
+                if local_model_exists:
+                    # 优先使用本地已下载的模型（离线模式）
+                    logger.info(f"检测到本地已下载的模型: {model_path}")
+                    logger.info("优先使用本地模型（离线模式）...")
+                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+                    try:
+                        embeddings = HuggingFaceEmbeddings(
+                            model_name=model_name,
+                            cache_folder=cache_folder,
+                            model_kwargs={"device": "cpu"},
+                            encode_kwargs={"normalize_embeddings": True},
+                        )
+                        logger.info(f"✅ 成功从本地加载模型: {model_name}")
+                    except Exception as offline_error:
+                        logger.warning(f"本地模型加载失败，尝试在线模式: {offline_error}")
+                        os.environ.pop("HF_HUB_OFFLINE", None)
+                        embeddings = HuggingFaceEmbeddings(
+                            model_name=model_name,
+                            cache_folder=cache_folder,
+                            model_kwargs={"device": "cpu"},
+                            encode_kwargs={"normalize_embeddings": True},
+                        )
+                else:
+                    # 本地没有模型，尝试在线下载
+                    logger.info(f"本地未找到模型，尝试从 HuggingFace 下载: {model_name}")
+                    os.environ.pop("HF_HUB_OFFLINE", None)
+                    embeddings = HuggingFaceEmbeddings(
+                        model_name=model_name,
+                        cache_folder=cache_folder,
+                        model_kwargs={"device": "cpu"},
+                        encode_kwargs={"normalize_embeddings": True},
+                    )
             else:
                 pass
                 # from langchain_openai import OpenAIEmbeddings 
@@ -615,6 +647,11 @@ async def upload_files_to_chroma_db(
             # 如果是绝对路径，保持原样（向后兼容）
             
             db_type = db_type.lower()
+            
+            # 只支持 Qdrant
+            if db_type != "qdrant":
+                result['errors'].append(f"不支持的数据库类型: {db_type}。只支持: qdrant")
+                return result
 
             # 如果数据库已存在，需要先清除缓存并关闭连接，然后才能安全删除
             if db_path.exists():
@@ -667,61 +704,32 @@ async def upload_files_to_chroma_db(
                     result['errors'].append(f"无法删除旧数据库: {str(e)}")
                     return result
 
-            if db_type == "qdrant":
+            # 创建 Qdrant 向量存储
+            try:
+                from langchain_qdrant import QdrantVectorStore
+                from qdrant_client import QdrantClient
+                from qdrant_client.models import Distance,VectorParams
+            except ImportError:
+                result['errors'].append("请安装langchain-qdrant和qdrant-client")
+                return result
 
-                try:
-                    from langchain_qdrant import QdrantVectorStore
-                    from qdrant_client import QdrantClient
-                    from qdrant_client.models import Distance,VectorParams
-                
-                except ImportError:
-                    result['errors'].append("请安装langchain-qdrant和qdrant-client")
-                    return result
+            client = QdrantClient(path=str(db_path))
+            embedding_dim = len(embeddings.embed_query("test"))
 
-                client = QdrantClient(path=str(db_path))
-                embedding_dim = len(embeddings.embed_query("test"))
-
-           
-                collection_name = "documents"
-                try :
-                    client.get_collection(collection_name)
-                
-                except Exception:
-                    client.create_collection(
-                        collection_name=collection_name,
-                        vectors_config=VectorParams(size=embedding_dim,distance=Distance.COSINE),
-                    )
-                
-                vector_store = QdrantVectorStore(
-                    client= client,
-                    collection_name = collection_name,
-                    embedding = embeddings,
-
+            collection_name = "documents"
+            try :
+                client.get_collection(collection_name)
+            except Exception:
+                client.create_collection(
+                    collection_name=collection_name,
+                    vectors_config=VectorParams(size=embedding_dim,distance=Distance.COSINE),
                 )
-            if db_type == "milvus":
-                try:
-                    from langchain_milvus import Milvus
-                except ImportError:
-                    result['errors'].append("请安装langchain-milvus")
-                    return result
-
-                milvus_host = os.getenv("MILVUS_HOST", "localhost")
-                milvus_port = os.getenv("MILVUS_PORT", 19530)
-                collection_name = db_name
-                vector_store = Milvus(
-                    embedding_function = embeddings,
-                    collection_name = collection_name,
-                    connection_args ={
-                        "host":milvus_host,
-                        "port":milvus_port,
-                    },
-                )
-            else:
-                # Chroma 数据库的删除已经在上面统一处理了
-                vector_store = Chroma(
-                    embedding_function = embeddings,
-                    persist_directory = str(db_path)
-                )
+            
+            vector_store = QdrantVectorStore(
+                client= client,
+                collection_name = collection_name,
+                embedding = embeddings,
+            )
 
             text_splitter = RecursiveCharacterTextSplitter(
                 chunk_size = chunk_size,
@@ -771,12 +779,9 @@ async def upload_files_to_chroma_db(
                 try:
                     from agents.tools import clear_retriever_cache
                     # 更新环境变量
-                    os.environ["VECTOR_DB_TYPE"] = db_type
-                    if db_type == "qdrant":
-                        os.environ["QDRANT_PATH"] = str(db_path)
-                        os.environ["QDRANT_COLLECTION"] = collection_name
-                    else:
-                        os.environ["CHROMA_DB_PATH"] = str(db_path)
+                    os.environ["VECTOR_DB_TYPE"] = "qdrant"
+                    os.environ["QDRANT_PATH"] = str(db_path)
+                    os.environ["QDRANT_COLLECTION"] = collection_name
                     
                     # 清除缓存，强制重新加载
                     clear_retriever_cache()
@@ -812,9 +817,9 @@ async def switch_vector_db(
     切换向量数据库类型和路径
     
     Args:
-        db_type: 数据库类型 ("chroma" 或 "qdrant")
+        db_type: 数据库类型（只支持 "qdrant"）
         db_path: 数据库路径
-        collection_name: 集合名（仅 Qdrant 需要，默认 "documents")
+        collection_name: 集合名（默认 "documents")
     
     Returns:
         切换结果
@@ -823,29 +828,24 @@ async def switch_vector_db(
 
     try:
         db_type = db_type.lower()
-        if db_type not in ["chroma", "qdrant"]:
-            raise HTTPException(status_code=400, detail="Invalid database type. Supported types: chroma, qdrant")
+        if db_type != "qdrant":
+            raise HTTPException(status_code=400, detail="Invalid database type. Only supports: qdrant")
         
-        # 修复：必须设置 VECTOR_DB_TYPE 环境变量
-        os.environ["VECTOR_DB_TYPE"] = db_type
-        
-        if db_type == "qdrant":
-            os.environ["QDRANT_PATH"] = db_path
-            os.environ["QDRANT_COLLECTION"] = collection_name or "documents"
-            logger.info(f"Switched to Qdrant database: {db_path} with collection: {collection_name or 'documents'}")
-        else:
-            os.environ["CHROMA_DB_PATH"] = db_path
-            logger.info(f"Switched to Chroma database: {db_path}")
+        # 设置 VECTOR_DB_TYPE 环境变量
+        os.environ["VECTOR_DB_TYPE"] = "qdrant"
+        os.environ["QDRANT_PATH"] = db_path
+        os.environ["QDRANT_COLLECTION"] = collection_name or "documents"
+        logger.info(f"Switched to Qdrant database: {db_path} with collection: {collection_name or 'documents'}")
         
         # 清除缓存，强制重新加载
         clear_retriever_cache()
         
         return {
             "success": True,
-            "message": f"Vector database switched to: {db_path} (type: {db_type})",
+            "message": f"Vector database switched to: {db_path} (type: qdrant)",
             "db_path": db_path,
-            "db_type": db_type,
-            "collection_name": collection_name if db_type == "qdrant" else None
+            "db_type": "qdrant",
+            "collection_name": collection_name or "documents"
         }
 
     except HTTPException:
