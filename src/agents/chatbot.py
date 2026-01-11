@@ -1,9 +1,6 @@
 from langchain_core.messages import BaseMessage
-# RunnableConfig 是 LangChain 中用于配置可运行对象的抽象基类
 from langchain_core.runnables import RunnableConfig
-
 from langgraph.func import entrypoint
-
 from core import get_model, settings
 
 
