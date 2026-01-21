@@ -63,6 +63,8 @@ dependencies = [
     "pip>=25.3",
     "isntall>=1.0.1",
     "sentence-transformers>=5.1.2",
+    "pymilvus>=2.6.6",
+    "google>=3.0.0",
 ]
 
 [dependency-groups]

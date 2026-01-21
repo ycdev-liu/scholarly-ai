@@ -26,7 +26,7 @@ from dotenv import load_dotenv
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 
-# Load environment variables
+# 加载环境变量
 load_dotenv()
 
 
