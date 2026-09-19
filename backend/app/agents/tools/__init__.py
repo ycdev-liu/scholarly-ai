@@ -15,6 +15,7 @@ from .openreview import (
     openreview_search,
     download_paper,
     download_paper_from_arxiv,
+    search_arxiv,
     list_downloaded_papers,
 )
 
@@ -39,6 +40,7 @@ __all__ = [
     "openreview_search",
     "download_paper",
     "download_paper_from_arxiv",
+    "search_arxiv",
     "list_downloaded_papers",
     # 工具函数
     "clear_retriever_cache",

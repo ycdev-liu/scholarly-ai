@@ -362,6 +362,108 @@ def download_paper_from_arxiv_func(
 download_paper_from_arxiv: BaseTool = tool(download_paper_from_arxiv_func)
 download_paper_from_arxiv.name = "Download_Paper_From_ArXiv"
 
+_ARXIV_API = "https://export.arxiv.org/api/query"
+_ATOM = "{http://www.w3.org/2005/Atom}"
+
+
+def _arxiv_id_from_url(url: str) -> str:
+    match = re.search(r"arxiv\.org/(?:abs|pdf)/([^?#]+)", url or "")
+    if not match:
+        return ""
+    return re.sub(r"v\d+$", "", match.group(1))
+
+
+def parse_arxiv_atom(xml_text: str) -> list[dict]:
+    """把 arXiv Atom 响应解析成论文列表。测试可直接调用，不访问网络。"""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(xml_text)
+    papers: list[dict] = []
+    for entry in root.findall(f"{_ATOM}entry"):
+        title = " ".join((entry.findtext(f"{_ATOM}title") or "").split())
+        abstract = " ".join((entry.findtext(f"{_ATOM}summary") or "").split())
+        published = (entry.findtext(f"{_ATOM}published") or "").strip()
+        authors = [
+            (author.findtext(f"{_ATOM}name") or "").strip()
+            for author in entry.findall(f"{_ATOM}author")
+        ]
+        authors = [name for name in authors if name]
+        abs_url = (entry.findtext(f"{_ATOM}id") or "").strip()
+        pdf_url = ""
+        for link in entry.findall(f"{_ATOM}link"):
+            if link.attrib.get("title") == "pdf" or link.attrib.get("type") == "application/pdf":
+                pdf_url = link.attrib.get("href") or ""
+                break
+        arxiv_id = _arxiv_id_from_url(pdf_url or abs_url)
+        if not pdf_url and arxiv_id:
+            pdf_url = f"https://arxiv.org/pdf/{arxiv_id}.pdf"
+        papers.append(
+            {
+                "title": title or "Untitled",
+                "authors": authors,
+                "abstract": abstract,
+                "arxiv_id": arxiv_id,
+                "published": published,
+                "pdf_url": pdf_url,
+            }
+        )
+    return papers
+
+
+def search_arxiv_func(query: str = "", max_results: int = 8) -> str:
+    """按关键词搜索 arXiv 论文。
+
+    这是通用论文检索，不替代 OpenReview 会议投稿搜索。
+
+    Args:
+        query: 检索词，例如 "medical image segmentation"
+        max_results: 最多返回篇数，默认 8
+
+    Returns:
+        str: JSON，包含 total_papers 和 papers。
+    """
+    query = (query or "").strip()
+    try:
+        limit = int(max_results)
+    except (TypeError, ValueError):
+        limit = 8
+    limit = min(max(limit, 1), 25)
+    if not query:
+        return json.dumps(
+            {"total_papers": 0, "papers": [], "error": "query is required"},
+            indent=2,
+            ensure_ascii=False,
+        )
+    try:
+        response = httpx.get(
+            _ARXIV_API,
+            params={
+                "search_query": query if query.startswith("all:") else f'all:"{query}"',
+                "start": 0,
+                "max_results": limit,
+            },
+            headers={"User-Agent": "scholarly-ai/0.1 (arxiv-search)"},
+            timeout=30.0,
+            follow_redirects=True,
+        )
+        response.raise_for_status()
+        papers = parse_arxiv_atom(response.text)[:limit]
+        return json.dumps(
+            {"total_papers": len(papers), "papers": papers},
+            indent=2,
+            ensure_ascii=False,
+        )
+    except Exception as exc:
+        return json.dumps(
+            {"total_papers": 0, "papers": [], "error": f"arXiv search error: {exc}"},
+            indent=2,
+            ensure_ascii=False,
+        )
+
+
+search_arxiv: BaseTool = tool(search_arxiv_func)
+search_arxiv.name = "Search_ArXiv"
+
 
 def list_downloaded_papers_func() -> str:
     """

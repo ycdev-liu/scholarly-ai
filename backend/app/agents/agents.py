@@ -4,6 +4,7 @@ from langgraph.graph.state import CompiledStateGraph
 # Pregel是一个可以并行执行的图
 from langgraph.pregel import Pregel
 
+from agents.auto_supervisor import auto_supervisor
 from agents.openreview_agent import openreview_agent
 from agents.paper_research_supervisor import paper_research_supervisor
 from agents.rag_assistant import rag_assistant
@@ -11,7 +12,7 @@ from schema import AgentInfo
 # LazyLoadingAgent是需要异步加载的代理的基类
 from agents.lazy_agent import LazyLoadingAgent
 
-DEFAULT_AGENT = "rag-assistant"
+DEFAULT_AGENT = "auto"
 
 AgentGraph = CompiledStateGraph | Pregel 
 
@@ -25,6 +26,10 @@ class Agent:
 
 
 agents: dict[str, Agent] = {
+    "auto": Agent(
+        description="自动编排：先查本地论文，不足时再做外部检索。",
+        graph_like=auto_supervisor,
+    ),
     "rag-assistant": Agent(
         description="一个可以访问数据库中信息的RAG助手。",
         graph_like=rag_assistant,
