@@ -84,7 +84,10 @@ async def main() -> None:
         agent_url = os.getenv("AGENT_URL")
         if not agent_url:
             host = os.getenv("HOST", "localhost")
-            port = os.getenv("PORT", 8081)
+            # 0.0.0.0 只能用于服务端监听，客户端应连 localhost
+            if host in ("0.0.0.0", "::"):
+                host = "127.0.0.1"
+            port = os.getenv("PORT", 8080)
             agent_url = f"http://{host}:{port}"
         try:
             with st.spinner("Connecting to agent service..."):
@@ -127,10 +130,12 @@ async def main() -> None:
             model = st.selectbox("LLM to use", options=agent_client.info.models, index=model_idx)
             agent_list = [a.key for a in agent_client.info.agents]
             agent_idx = agent_list.index(agent_client.info.default_agent)
+            agent_labels = {"auto": "Auto / Supervisor"}
             agent_client.agent = st.selectbox(
                 "Agent to use",
                 options=agent_list,
                 index=agent_idx,
+                format_func=lambda key: agent_labels.get(key, key),
             )
             use_streaming = st.toggle("Stream results", value=True)
 
@@ -184,6 +189,8 @@ async def main() -> None:
 
     if len(messages) == 0:
         match agent_client.agent:
+            case "auto":
+                WELCOME = "Auto 模式会根据任务自动选择本地论文检索或外部论文搜索能力。"
             case "rag-assistant":
                 WELCOME = """Hello! I'm an AI-powered Company Policy & HR assistant with access to AcmeTech's Employee Handbook.
                 I can help you find information about benefits, remote work, time-off policies, company values, and more. Ask me anything!"""
