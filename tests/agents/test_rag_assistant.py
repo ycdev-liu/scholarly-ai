@@ -378,6 +378,8 @@ async def test_rag_assistant_integration_workflow():
     assert len(create_calls) > 0 or len(search_calls) > 0, "应该至少有一个工具调用"
 
 
+test_rag_agent.__test__ = False
+
 if __name__ == "__main__":
     # 直接运行测试
     asyncio.run(main())

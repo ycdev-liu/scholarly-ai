@@ -1,6 +1,7 @@
 """共享工具函数和常量。"""
 import os
 import threading
+from pathlib import Path
 from langchain_chroma import Chroma
 from langchain_core.tools import BaseTool
 from langchain_openai import OpenAIEmbeddings
@@ -24,21 +25,51 @@ _embeddings_lock = threading.Lock()
 
 def format_contexts(docs):
     """格式化检索到的文档。"""
-    return "\n\n".join(doc.page_content for doc in docs)
+    contexts = []
+    for doc in docs:
+        metadata = doc.metadata
+        source = Path(str(metadata.get("source", "unknown"))).name
+        page = metadata.get("page")
+        if page is None:
+            page_label = ""
+        else:
+            try:
+                page_label = f", page {int(page) + 1}"
+            except (TypeError, ValueError):
+                page_label = f", page {page}"
+        preview = metadata.get("preview_path")
+        preview_line = f"\nPage preview: {preview}" if preview else ""
+        contexts.append(f"Source: {source}{page_label}\n{doc.page_content}{preview_line}")
+    return "\n\n".join(contexts)
 
 
 def get_embeddings():
-    """获取本地模型或OpenAI模型的嵌入。"""
+    """获取当前配置的嵌入模型。"""
     global _embeddings_cache
     
     if _embeddings_cache is None:
         with _embeddings_lock:
             # 双重检查锁定
             if _embeddings_cache is None:
-                use_local_model_env = os.getenv("USE_LOCAL_MODEL", "False")
-                use_local_model = use_local_model_env.lower() == "true"
-                
-                if use_local_model:
+                provider = os.getenv("EMBEDDING_PROVIDER", "").lower()
+                if not provider:
+                    provider = (
+                        "local"
+                        if os.getenv("USE_LOCAL_MODEL", "False").lower() == "true"
+                        else "openai"
+                    )
+
+                if provider == "dashscope":
+                    from langchain_community.embeddings import DashScopeEmbeddings
+
+                    api_key = os.getenv("DASHSCOPE_API_KEY")
+                    if not api_key:
+                        raise RuntimeError("DASHSCOPE_API_KEY is required for DashScope embeddings")
+                    _embeddings_cache = DashScopeEmbeddings(
+                        model=os.getenv("DASHSCOPE_EMBEDDING_MODEL", "text-embedding-v3"),
+                        dashscope_api_key=api_key,
+                    )
+                elif provider == "local":
                     from langchain_community.embeddings import HuggingFaceEmbeddings
                     catche_folder = os.path.join(
                         os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
@@ -66,13 +97,15 @@ def get_embeddings():
                             model_kwargs={"device": "cpu"},
                             encode_kwargs={"normalize_embeddings": True},
                         )
-                else:
+                elif provider == "openai":
                     try:
                         _embeddings_cache = OpenAIEmbeddings()
                     except Exception as e:
                         raise RuntimeError(
                             "Failed to initialize OpenAIEmbeddings. Ensure the OpenAI API key is set."
                         ) from e
+                else:
+                    raise ValueError(f"Unsupported embedding provider: {provider}")
     
     return _embeddings_cache
 
@@ -136,6 +169,14 @@ def load_vector_db():
     
     # 确保统一文件夹存在
     os.makedirs(VECTOR_DB_BASE_DIR, exist_ok=True)
+
+    if db_type == "chroma":
+        path = os.getenv("CHROMA_DB_PATH") or os.path.join(VECTOR_DB_BASE_DIR, "default_chroma")
+        return Chroma(embedding_function=embeddings, persist_directory=path).as_retriever(
+            search_type="mmr", search_kwargs={"k": 5, "fetch_k": 20}
+        )
+    if db_type != "qdrant":
+        raise ValueError(f"Unsupported vector database type: {db_type}")
     
     if db_type == "qdrant":
         # 使用 Qdrant 本地嵌入式模式

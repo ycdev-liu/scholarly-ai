@@ -51,6 +51,7 @@ def test_auto_is_default_and_old_agents_remain():
     keys = [item.key for item in get_all_agent_info()]
     assert keys == [
         "auto",
+        "literature-review",
         "rag-assistant",
         "openreview-agent",
         "paper-research-supervisor",

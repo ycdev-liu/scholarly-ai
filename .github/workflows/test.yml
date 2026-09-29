@@ -39,11 +39,11 @@ jobs:
 
     - name: Run mypy
       run: |
-        uv run mypy src/
+        uv run mypy backend/app/
 
     - name: Test with pytest
       run: |
-        uv run pytest --cov=src/ --cov-report=xml
+        uv run pytest --cov=backend/app/ --cov-report=xml
 
     - name: Upload coverage reports to Codecov
       uses: codecov/codecov-action@v5

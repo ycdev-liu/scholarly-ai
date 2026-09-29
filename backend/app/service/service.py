@@ -23,7 +23,7 @@ def custom_generate_unique_id(route: APIRoute) -> str:
 import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(
-    level=logging.INFO,
+    level=settings.LOG_LEVEL.to_logging_level(),
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S'
 )
@@ -83,6 +83,8 @@ app = FastAPI(lifespan=lifespan, generate_unique_id_function=custom_generate_uni
 # 注册路由（先注册公开路由，再注册需要认证的路由）
 app.include_router(metadata.public_router)  # 公开路由：/api/info, /health
 app.include_router(agent.router)  # /api/agents/*
+
+
 app.include_router(feedback.router)  # /api/feedback
 app.include_router(history.router)  # /api/history
 app.include_router(vectordb.router)  # /api/vectordb/*

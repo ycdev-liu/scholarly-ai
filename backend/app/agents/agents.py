@@ -5,6 +5,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.pregel import Pregel
 
 from agents.auto_supervisor import auto_supervisor
+from agents.literature_review import literature_review_agent
 from agents.openreview_agent import openreview_agent
 from agents.paper_research_supervisor import paper_research_supervisor
 from agents.rag_assistant import rag_assistant
@@ -29,6 +30,10 @@ agents: dict[str, Agent] = {
     "auto": Agent(
         description="自动编排：先查本地论文，不足时再做外部检索。",
         graph_like=auto_supervisor,
+    ),
+    "literature-review": Agent(
+        description="多源检索、证据核验与文献综述；敏感操作需确认。",
+        graph_like=literature_review_agent,
     ),
     "rag-assistant": Agent(
         description="一个可以访问数据库中信息的RAG助手。",

@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from langchain_core.runnables import RunnableConfig
 
 from agents import DEFAULT_AGENT, get_agent
 from schema import ChatMessage, StreamInput, UserInput
@@ -15,6 +16,18 @@ from service.utils import (
 )
 
 router = APIRouter(prefix="/api/agents", dependencies=[Depends(verify_bearer)])
+
+
+@router.get("/{agent_id}/pending", operation_id="get_pending_approval")
+async def pending_approval(thread_id: str, agent_id: str = DEFAULT_AGENT) -> dict[str, Any]:
+    """Return a pending structured approval for a persisted thread, if present."""
+    agent = get_agent(agent_id)
+    state = await agent.aget_state(RunnableConfig(configurable={"thread_id": thread_id}))
+    for task in state.tasks:
+        for item in getattr(task, "interrupts", ()):
+            if isinstance(item.value, dict) and item.value.get("kind") == "approval_required":
+                return {"pending": item.value}
+    return {"pending": None}
 
 
 @router.post("/invoke", operation_id="invoke_agent")
@@ -42,9 +55,11 @@ async def invoke(user_input: UserInput, agent_id: str = DEFAULT_AGENT) -> ChatMe
             # 最后发生的是中断
             # 将第一个中断的值作为AIMessage返回
             from langchain_core.messages import AIMessage
-            output = langchain_to_chat_message(
-                AIMessage(content=response["__interrupt__"][0].value)
-            )
+            payload = response["__interrupt__"][0].value
+            if isinstance(payload, dict) and payload.get("kind") == "approval_required":
+                output = ChatMessage(type="custom", content="", custom_data=payload)
+            else:
+                output = langchain_to_chat_message(AIMessage(content=payload))
         else:
             raise ValueError(f"Unexpected response type: {response_type}")
 

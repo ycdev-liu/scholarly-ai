@@ -44,6 +44,10 @@ class UserInput(BaseModel):
         description="User input to the agent.",
         examples=["What is the weather in Tokyo?"],
     )
+    approval: Literal["approve", "deny"] | None = Field(
+        default=None,
+        description="Resume a pending literature-review operation on the same thread.",
+    )
     model: SerializeAsAny[AllModelEnum] | None = Field(
         title="Model",
         description="LLM Model to use for the agent. Defaults to the default model set in the settings of the service.",

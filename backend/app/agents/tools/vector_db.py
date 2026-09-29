@@ -2,12 +2,12 @@
 import json
 import os
 import re
-import shutil
 from datetime import datetime
+from pathlib import Path
 from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.tools import BaseTool, tool
 
+from .pdf_processing import load_paper_pages
 from .utils import (
     VECTOR_DB_BASE_DIR,
     DOWNLOAD_PAPERS_DIR,
@@ -44,13 +44,13 @@ def database_search_func(query: str) -> str:
 database_search: BaseTool = tool(database_search_func)
 database_search.name = "Database_Search"  # 根据数据库的用途更新名称
 
-
+# 创建向量数据库
 def create_vector_db_from_pdf_func(
     pdf_file_path: str,
     db_name: str = "",
     db_type: str = "",
-    chunk_size: int = 2000,
-    chunk_overlap: int = 500,
+    chunk_size: int = 1200,
+    chunk_overlap: int = 180,
 ) -> str:
     """
     从PDF文件创建向量数据库。
@@ -65,8 +65,8 @@ def create_vector_db_from_pdf_func(
                       如果文件名不存在，会尝试在目录中查找包含关键词的PDF文件
         db_name: 数据库名称（可选，如果不提供或为空则自动生成，基于时间戳）
         db_type: 数据库类型 "chroma" 或 "qdrant"（可选，默认使用环境变量 VECTOR_DB_TYPE）
-        chunk_size: 文本块大小，默认 2000
-        chunk_overlap: 文本块重叠大小，默认 500
+        chunk_size: 文本块大小，默认 1200
+        chunk_overlap: 文本块重叠大小，默认 180
     
     Returns:
         str: JSON字符串，包含创建结果信息
@@ -149,6 +149,12 @@ def create_vector_db_from_pdf_func(
                 "success": False,
                 "error": f"不支持的数据库类型: '{db_type}'。支持的类型: chroma, qdrant"
             }, indent=2, ensure_ascii=False)
+
+        if chunk_size <= 0 or chunk_overlap < 0 or chunk_overlap >= chunk_size:
+            return json.dumps({
+                "success": False,
+                "error": "chunk_size 必须大于 0，chunk_overlap 必须在 0 到 chunk_size 之间"
+            }, indent=2, ensure_ascii=False)
         
         # 获取embeddings
         embeddings = get_embeddings()
@@ -169,9 +175,20 @@ def create_vector_db_from_pdf_func(
         
         db_path = os.path.join(VECTOR_DB_BASE_DIR, db_name)
         
-        # 如果数据库已存在，删除它
+        # Never replace a database that may contain previously indexed papers.
         if os.path.exists(db_path):
-            shutil.rmtree(db_path)
+            return json.dumps({
+                "success": False,
+                "error": f"向量数据库路径已存在: {db_path}，请使用新的 db_name"
+            }, indent=2, ensure_ascii=False)
+
+        documents = load_paper_pages(pdf_file_path, Path(db_path) / "previews")
+        if not documents:
+            return json.dumps({
+                "success": False,
+                "error": "PDF 没有可入库的正文内容",
+                "file_path": pdf_file_path,
+            }, indent=2, ensure_ascii=False)
         
         # 根据数据库类型创建向量存储
         if db_type == "qdrant":
@@ -216,17 +233,6 @@ def create_vector_db_from_pdf_func(
                 persist_directory=db_path
             )
         
-        # 加载PDF文档
-        loader = PyPDFLoader(pdf_file_path)
-        documents = loader.load()
-        
-        if not documents:
-            return json.dumps({
-                "success": False,
-                "error": "PDF文件为空或无法加载",
-                "file_path": pdf_file_path
-            }, indent=2, ensure_ascii=False)
-        
         # 分割文档
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=chunk_size,
@@ -254,7 +260,9 @@ def create_vector_db_from_pdf_func(
             "db_path": db_path,
             "db_type": db_type,
             "pdf_file": pdf_file_path,
-            "total_pages": len(documents),
+            "total_pages": documents[0].metadata.get("total_pages", len(documents)),
+            "indexed_pages": len(documents),
+            "preview_pages": sum("preview_path" in doc.metadata for doc in documents),
             "total_chunks": len(chunks),
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,

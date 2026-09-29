@@ -258,18 +258,26 @@ async def main() -> None:
                 help="相邻文本块之间的重叠字符数"
             )
             
-            use_local_embedding = st.toggle(  # 修复：改为单数
-                "使用本地 Embedding 模型",
-                value=True,  # 修复：改为 True，匹配后端默认值
-                help="如果启用，使用本地模型（需要模型已下载到缓存）"
-            )
-            
-            # 新增：模型名称输入
-            model_name = st.text_input(
-                "模型名称",
-                value="BAAI/bge-m3",
-                help="本地 embedding 模型名称"
-            )
+            embedding_provider = os.getenv("EMBEDDING_PROVIDER", "").lower()
+            if embedding_provider in {"dashscope", "openai"}:
+                use_local_embedding = False
+                if embedding_provider == "dashscope":
+                    model_name = os.getenv("DASHSCOPE_EMBEDDING_MODEL", "text-embedding-v3")
+                    st.caption(f"嵌入模型：阿里百炼 {model_name}")
+                else:
+                    model_name = "默认模型"
+                    st.caption("嵌入模型：OpenAI")
+            else:
+                use_local_embedding = st.toggle(
+                    "使用本地 Embedding 模型",
+                    value=True,
+                    help="如果启用，使用本地模型（需要模型已下载到缓存）"
+                )
+                model_name = st.text_input(
+                    "模型名称",
+                    value="BAAI/bge-m3",
+                    help="本地 embedding 模型名称"
+                )
             
             # 新增：自动切换选项
             auto_switch = st.toggle(
@@ -799,6 +807,10 @@ async def create_vector_db_from_files(
             
             # 显示数据库类型信息
             created_db_type = result.get("db_type", db_type)
+            embedding_label = (
+                "阿里百炼" if os.getenv("EMBEDDING_PROVIDER", "").lower() == "dashscope"
+                else "本地模型" if use_local_embedding else "OpenAI"
+            )
             
             st.success(f"""
             **向量数据库创建成功！**
@@ -807,7 +819,7 @@ async def create_vector_db_from_files(
             - 🗄️ 数据库类型: {created_db_type.upper()}
             - 📄 处理文件数: {result.get('total_files', 0)}
             - 📝 总文本块数: {result.get('total_chunks', 0)}
-            - 🔧 Embedding 模型: {'本地模型' if use_local_embedding else 'OpenAI'} ({model_name})
+            - 🔧 Embedding 模型: {embedding_label} ({model_name})
             """)
             
             # 显示自动切换信息

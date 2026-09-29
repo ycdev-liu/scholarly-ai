@@ -296,6 +296,8 @@ async def test_openreview_agent_download():
         pytest.skip("未找到论文，跳过下载测试")
 
 
+test_agent.__test__ = False
+
 if __name__ == "__main__":
     # 直接运行测试
     from langchain_core.messages import HumanMessage

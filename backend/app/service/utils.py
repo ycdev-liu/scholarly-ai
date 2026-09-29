@@ -147,9 +147,16 @@ async def _handle_input(user_input: UserInput, agent: "AgentGraph") -> tuple[dic
     # 如果存在中断任务，则创建命令
     input: Command | dict[str, Any]
     if interrupted_tasks:
-        # 假设用户输入是对中断恢复代理执行的响应
-        input = Command(resume=user_input.message)
+        pending = interrupted_tasks[0].interrupts[0].value
+        if isinstance(pending, dict) and pending.get("kind") == "approval_required":
+            if user_input.approval is None:
+                raise HTTPException(status_code=422, detail="approval is required to resume")
+            input = Command(resume=user_input.approval)
+        else:
+            input = Command(resume=user_input.message)
     else:
+        if user_input.approval is not None:
+            raise HTTPException(status_code=422, detail="No operation is awaiting approval")
         input = {"messages": [HumanMessage(content=user_input.message)]}
 
     kwargs = {
@@ -192,7 +199,10 @@ async def message_generator(
                     if node == "__interrupt__":
                         interrupt: Interrupt
                         for interrupt in updates:
-                            new_messages.append(AIMessage(content=interrupt.value))
+                            if isinstance(interrupt.value, dict) and interrupt.value.get("kind") == "approval_required":
+                                yield f"data: {json.dumps({'type': 'approval_required', 'content': interrupt.value})}\n\n"
+                            else:
+                                new_messages.append(AIMessage(content=interrupt.value))
                         continue
                     updates = updates or {}
                     update_messages = updates.get("messages", [])

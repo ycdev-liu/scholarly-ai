@@ -90,6 +90,11 @@ def get_embeddings(use_local: bool = True, model_name: str = "BAAI/bge-m3"):
     Returns:
         嵌入模型实例
     """
+    if os.getenv("EMBEDDING_PROVIDER", "").lower() in {"dashscope", "openai"}:
+        from agents.tools.utils import get_embeddings as get_configured_embeddings
+
+        return get_configured_embeddings()
+
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
     
     if use_local:

@@ -14,10 +14,10 @@ RUN pip install --no-cache-dir uv
 # --only-group client: Only install dependencies marked as part of the "client" group in pyproject.toml
 RUN uv sync --frozen --only-group client
 
-COPY src/client/ ./client/
-COPY src/schema/ ./schema/
-COPY src/streamlit_app.py .
-COPY src/arg_app.py .
+COPY backend/app/client/ ./client/
+COPY backend/app/schema/ ./schema/
+COPY backend/app/streamlit_app.py .
+COPY backend/app/arg_app.py .
 
 # Create a startup script that uses environment variable
 RUN echo '#!/bin/sh\nstreamlit run "${STREAMLIT_APP:-streamlit_app.py}"' > /app/start.sh && \

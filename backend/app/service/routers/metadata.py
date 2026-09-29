@@ -129,6 +129,9 @@ async def health_check():
     except Exception as e:
         health_status["database"] = {"error": str(e)[:100]}
 
+    from agents.literature_review import literature_review_agent
+    health_status["mcp"] = literature_review_agent.mcp_status
+
     return health_status
 
 

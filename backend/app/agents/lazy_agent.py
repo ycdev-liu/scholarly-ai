@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.pregel import Pregel
 
-
+# 所有类的基类
 class LazyLoadingAgent(ABC):
     """需要异步加载的代理的基类。"""
 

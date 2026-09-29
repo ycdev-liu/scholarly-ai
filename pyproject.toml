@@ -64,7 +64,11 @@ dependencies = [
     "isntall>=1.0.1",
     "sentence-transformers>=5.1.2",
     "pymilvus>=2.6.6",
+    "pyyaml>=6,<7",
     "google>=3.0.0",
+    "dashscope>=1.20,<2",
+    "pypdfium2>=4.30,<6",
+    "pillow>=10,<13",
 ]
 
 [dependency-groups]
@@ -97,7 +101,7 @@ target-version = "py311"
 extend-select = ["I", "U"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["backend/app"]
 asyncio_default_fixture_loop_scope = "function"
 # 排除 tests1 目录和其中的文件
 norecursedirs = ["tests1", "*.egg", "build", "dist", ".venv"]
@@ -109,7 +113,7 @@ OPENAI_API_KEY = "sk-fake-openai-key"
 
 [tool.mypy]
 plugins = "pydantic.mypy"
-exclude = "src/streamlit_app.py"
+exclude = "backend/app/streamlit_app.py"
 
 [[tool.mypy.overrides]]
 module = ["numexpr.*"]
@@ -121,11 +125,10 @@ ignore_missing_imports = true
 
 [tool.pyright]
 # Pyright 配置，用于 IDE 静态分析
-include = ["src", "tests"]
+include = ["backend/app", "tests"]
 exclude = ["**/__pycache__", "**/.venv", "**/node_modules", "tests1"]
 pythonVersion = "3.12"
 pythonPlatform = "Windows"
 typeCheckingMode = "basic"
 # 添加 src 目录到 Python 路径
-extraPaths = ["src"]
-
+extraPaths = ["backend/app"]

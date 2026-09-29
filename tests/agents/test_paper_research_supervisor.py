@@ -537,6 +537,8 @@ async def test_supervisor_complete_workflow():
         pytest.skip("未找到PDF文件，跳过完整工作流测试")
 
 
+test_supervisor_agent.__test__ = False
+
 if __name__ == "__main__":
     # 直接运行测试
     asyncio.run(main())

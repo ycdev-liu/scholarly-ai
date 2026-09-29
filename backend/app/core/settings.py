@@ -1,3 +1,4 @@
+import logging
 from enum import StrEnum
 from json import loads
 from typing import Annotated, Any
@@ -37,6 +38,17 @@ class DatabaseType(StrEnum):
     MONGO = "mongo"
 
 
+class LogLevel(StrEnum):
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
+
+    def to_logging_level(self) -> int:
+        return getattr(logging, self.value)
+
+
 
 
 def check_str_is_http(x: str) -> str:
@@ -53,6 +65,7 @@ class Settings(BaseSettings):
         validate_default=False,
     )
     MODE: str | None = None
+    LOG_LEVEL: LogLevel = LogLevel.WARNING
 
     HOST: str = "0.0.0.0"
     PORT: int = 8080
@@ -86,6 +99,8 @@ class Settings(BaseSettings):
     # MCP Configuration
     GITHUB_PAT: SecretStr | None = None
     MCP_GITHUB_SERVER_URL: str = "https://api.githubcopilot.com/mcp/"
+    MCP_RESEARCH_SERVERS: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    MCP_RESEARCH_ALLOWED_TOOLS: dict[str, list[str]] = Field(default_factory=dict)
 
     LANGCHAIN_TRACING_V2: bool = False
     LANGCHAIN_PROJECT: str = "default"
@@ -242,6 +257,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
-
-
 

@@ -117,6 +117,22 @@ class AgentClient:
                 )
         self.agent = agent
 
+    async def aget_pending_approval(self, thread_id: str) -> dict[str, Any] | None:
+        if not self.agent:
+            raise AgentClientError("No agent selected")
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(
+                    f"{self.base_url}/api/agents/{self.agent}/pending",
+                    params={"thread_id": thread_id},
+                    headers=self._headers,
+                    timeout=self.timeout,
+                )
+                response.raise_for_status()
+            except httpx.HTTPError as exc:
+                raise AgentClientError(f"Error getting pending approval: {exc}") from exc
+        return response.json().get("pending")
+
     async def ainvoke(
         self,
         message: str,
@@ -124,6 +140,7 @@ class AgentClient:
         thread_id: str | None = None,
         user_id: str | None = None,
         agent_config: dict[str, Any] | None = None,
+        approval: str | None = None,
     ) -> ChatMessage:
         """
         异步调用代理。仅返回最终消息。
@@ -141,6 +158,8 @@ class AgentClient:
         if not self.agent:
             raise AgentClientError("No agent selected. Use update_agent() to select an agent.")
         request = UserInput(message=message)
+        if approval:
+            request.approval = approval  # type: ignore[assignment]
         if thread_id:
             request.thread_id = thread_id
         if model:
@@ -170,6 +189,7 @@ class AgentClient:
         thread_id: str | None = None,
         user_id: str | None = None,
         agent_config: dict[str, Any] | None = None,
+        approval: str | None = None,
     ) -> ChatMessage:
         """
         同步调用代理。仅返回最终消息。
@@ -187,6 +207,8 @@ class AgentClient:
         if not self.agent:
             raise AgentClientError("No agent selected. Use update_agent() to select an agent.")
         request = UserInput(message=message)
+        if approval:
+            request.approval = approval  # type: ignore[assignment]
         if thread_id:
             request.thread_id = thread_id
         if model:
@@ -225,6 +247,8 @@ class AgentClient:
                         return ChatMessage.model_validate(parsed["content"])
                     except Exception as e:
                         raise Exception(f"Server returned invalid message: {e}")
+                case "approval_required":
+                    return ChatMessage(type="custom", content="", custom_data=parsed["content"])
                 case "token":
                     # 直接产生字符串token
                     return parsed["content"]
@@ -241,6 +265,7 @@ class AgentClient:
         user_id: str | None = None,
         agent_config: dict[str, Any] | None = None,
         stream_tokens: bool = True,
+        approval: str | None = None,
     ) -> Generator[ChatMessage | str, None, None]:
         """
         同步流式传输代理的响应。
@@ -263,6 +288,8 @@ class AgentClient:
         if not self.agent:
             raise AgentClientError("No agent selected. Use update_agent() to select an agent.")
         request = StreamInput(message=message, stream_tokens=stream_tokens)
+        if approval:
+            request.approval = approval  # type: ignore[assignment]
         if thread_id:
             request.thread_id = thread_id
         if user_id:
@@ -297,6 +324,7 @@ class AgentClient:
         user_id: str | None = None,
         agent_config: dict[str, Any] | None = None,
         stream_tokens: bool = True,
+        approval: str | None = None,
     ) -> AsyncGenerator[ChatMessage | str, None]:
         """
         异步流式传输代理的响应。
@@ -319,6 +347,8 @@ class AgentClient:
         if not self.agent:
             raise AgentClientError("No agent selected. Use update_agent() to select an agent.")
         request = StreamInput(message=message, stream_tokens=stream_tokens)
+        if approval:
+            request.approval = approval  # type: ignore[assignment]
         if thread_id:
             request.thread_id = thread_id
         if model:
@@ -362,7 +392,7 @@ class AgentClient:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    f"{self.base_url}/feedback",
+                    f"{self.base_url}/api/feedback",
                     json=request.model_dump(),
                     headers=self._headers,
                     timeout=self.timeout,
@@ -382,7 +412,7 @@ class AgentClient:
         request = ChatHistoryInput(thread_id=thread_id)
         try:
             response = httpx.post(
-                f"{self.base_url}/history",
+                    f"{self.base_url}/api/history",
                 json=request.model_dump(),
                 headers=self._headers,
                 timeout=self.timeout,
@@ -435,7 +465,7 @@ class AgentClient:
         async with httpx.AsyncClient(timeout=300.0) as client:  # 增加超时时间，文件处理可能较慢
             try:
                 response = await client.post(
-                    f"{self.base_url}/vector-db/upload",
+                    f"{self.base_url}/api/documents/upload",
                     files=files_data,
                     data=data,
                     headers=self._headers,
@@ -498,7 +528,7 @@ class AgentClient:
         async with httpx.AsyncClient() as client:
             try:
                 response = await client.post(
-                    f"{self.base_url}/vector-db/switch",
+                    f"{self.base_url}/api/vectordb/switch",
                     data=data,
                     headers=self._headers,
                 )
@@ -513,7 +543,4 @@ class AgentClient:
         """
         import asyncio
         return asyncio.run(self.aswitch_vector_db(db_path))
-
-
-
 
