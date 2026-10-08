@@ -80,7 +80,7 @@ Guidelines:
 
 def wrap_model(model: BaseChatModel) -> RunnableSerializable[AgentState, AIMessage]:
     """用工具包装模型以进行代理转移。"""
-    # Create transfer tools
+    # Supervisor 通过转交工具决定下一步由搜索 Agent 还是问答 Agent 执行。
     from langchain_core.tools import tool
     
     @tool
@@ -399,7 +399,7 @@ async def call_rag_assistant(state: AgentState, config: RunnableConfig) -> Agent
     return {"messages": []}
 
 
-# Define the graph
+# 编排图先初始化研究状态，再由 Supervisor 根据工具调用路由任务。
 agent = StateGraph(AgentState)
 agent.add_node("initialize", initialize_state)
 agent.add_node("supervisor", acall_model)
@@ -420,7 +420,7 @@ def route_to_agent(state: AgentState) -> Literal["openreview_agent", "rag_assist
     if not last_message.tool_calls:
         return "done"
     
-    # Check which tool was called
+    # 读取模型选中的转交工具，映射到对应子 Agent。
     for tool_call in last_message.tool_calls:
         tool_name = tool_call.get("name", "")
         if "transfer_to_openreview_agent" in tool_name:
@@ -448,4 +448,3 @@ agent.add_edge("rag_assistant", "supervisor")
 
 
 paper_research_supervisor = agent.compile()
-

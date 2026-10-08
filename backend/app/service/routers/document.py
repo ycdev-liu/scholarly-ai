@@ -1,16 +1,19 @@
 """文档处理相关的 API 路由"""
+import asyncio
 import gc
 import os
 import shutil
 import time
 from pathlib import Path
-from typing import List
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from agents.tools import clear_retriever_cache
-from service.utils import verify_bearer
+from agents.tools.hybrid_search import BM25Index
+from agents.tools.pageindex_search import index_pdf, pageindex_enabled
+from agents.tools.paper_chunking import split_paper_pages
+from agents.tools.pdf_processing import load_paper_pages
+from fastapi import APIRouter, Depends, File, Form, UploadFile
 from service import document_processing
+from service.utils import verify_bearer
 
 router = APIRouter(prefix="/api/documents", dependencies=[Depends(verify_bearer)])
 
@@ -71,9 +74,9 @@ def _delete_existing_db(db_path: Path, max_retries: int = 5) -> tuple[bool, str 
 
 @router.post("/upload", operation_id="upload_and_process_documents")
 async def upload_and_process_documents(
-    files: List[UploadFile] = File(...),
-    chunk_size: int = Form(2000),
-    chunk_overlap: int = Form(500),
+    files: list[UploadFile] = File(...),
+    chunk_size: int = Form(512),
+    chunk_overlap: int = Form(64),
     use_local_embedding: bool = Form(True),
     model_name: str = Form("BAAI/bge-m3"),
     db_name: str = Form("chroma_db_uploader"),
@@ -85,8 +88,8 @@ async def upload_and_process_documents(
     
     Args:
         files: 上传的文件列表
-        chunk_size: 文档块大小
-        chunk_overlap: 文档块重叠大小
+        chunk_size: PDF 片段的 Token 上限；非 PDF 文件仍按字符切分
+        chunk_overlap: PDF 片段的重叠 Token 数；非 PDF 文件仍按字符计数
         use_local_embedding: 是否使用本地嵌入模型
         model_name: 嵌入模型名称
         db_name: 数据库名称
@@ -103,9 +106,14 @@ async def upload_and_process_documents(
         "total_chunks": 0,
         "processed_files": [],
         "errors": [],
+        "pageindex": [],
     }
-    
+    saved_files = []
+
     try:
+        if chunk_size <= 0 or chunk_overlap < 0 or chunk_overlap >= chunk_size:
+            result["errors"].append("chunk_size 必须大于 0，chunk_overlap 必须小于 chunk_size")
+            return result
         # 1. 保存上传的文件
         saved_files = await document_processing.save_uploaded_files(files)
         
@@ -145,22 +153,49 @@ async def upload_and_process_documents(
             result["errors"].append("无法创建向量存储，请检查数据库类型和依赖包")
             return result
         
-        # 6. 处理文档并添加到向量存储
+        # 6. 将上传原件保存在知识库中，避免临时目录清理后引用路径失效。
+        source_dir = db_path / "sources"
+        source_dir.mkdir(parents=True, exist_ok=True)
+
+        # 7. 处理文档并添加到向量存储
         for file_path in saved_files:
             filename = file_path.name
             try:
-                # 加载文档
-                loader = document_processing.load_document(file_path)
-                documents = loader.load()
-                
-                # 分割文档
-                chunks = document_processing.split_documents(documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+                persistent_file = source_dir / filename
+                shutil.copy2(file_path, persistent_file)
+                file_path = persistent_file
+                # 文档片段与 PageIndex 共用持久路径，便于按来源定位同一篇论文。
+                if file_path.suffix.lower() == ".pdf":
+                    # 与 Agent 建库使用同一套论文正文清理和章节切分流程。
+                    documents = load_paper_pages(str(file_path), db_path / "previews")
+                    chunks = split_paper_pages(
+                        documents, max_tokens=chunk_size, overlap_tokens=chunk_overlap
+                    )
+                else:
+                    loader = document_processing.load_document(file_path)
+                    documents = loader.load()
+                    chunks = document_processing.split_documents(
+                        documents, chunk_size=chunk_size, chunk_overlap=chunk_overlap
+                    )
+                if not chunks:
+                    result["errors"].append(f"{filename} 没有可入库的文本；扫描版 PDF 需要先进行 OCR")
+                    continue
                 
                 # 添加到向量存储
-                if chunks:
-                    vector_store.add_documents(chunks)
-                    result["total_chunks"] += len(chunks)
-                    result["processed_files"].append({"filename": filename, "chunks": len(chunks)})
+                vector_store.add_documents(chunks)
+                # 新文档同步写入词项索引，旧库补建逻辑由 HybridRetriever 处理。
+                BM25Index(db_path, collection_name if db_type == "qdrant" else None).add_documents(chunks)
+                if pageindex_enabled() and file_path.suffix.lower() == ".pdf":
+                    try:
+                        indexed = await asyncio.to_thread(
+                            index_pdf,
+                            db_path, file_path, collection_name if db_type == "qdrant" else None
+                        )
+                        result["pageindex"].append({"filename": filename, "doc_id": indexed["doc_id"], "success": True})
+                    except Exception as exc:
+                        result["pageindex"].append({"filename": filename, "success": False, "error": str(exc)})
+                result["total_chunks"] += len(chunks)
+                result["processed_files"].append({"filename": filename, "chunks": len(chunks)})
             except ValueError as e:
                 result["errors"].append(str(e))
                 continue
@@ -168,9 +203,11 @@ async def upload_and_process_documents(
                 result["errors"].append(f"处理文件 {filename} 时出错: {str(e)}")
                 continue
         
-        result["success"] = True
+        result["success"] = bool(result["processed_files"])
         result["db_path"] = str(db_path)
         result["db_type"] = db_type
+        if not result["success"]:
+            return result
         
         # 7. 自动切换数据库（如果需要）
         if auto_switch:
@@ -198,5 +235,8 @@ async def upload_and_process_documents(
     
     except Exception as e:
         result["errors"].append(f"处理文档时出错：{str(e)}")
+    finally:
+        if saved_files:
+            shutil.rmtree(saved_files[0].parent, ignore_errors=True)
     
     return result

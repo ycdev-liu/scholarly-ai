@@ -1,5 +1,6 @@
 """文档处理相关的工具函数"""
 import os
+import shutil
 import tempfile
 from pathlib import Path
 from typing import List
@@ -20,13 +21,17 @@ async def save_uploaded_files(files: List[UploadFile]) -> List[Path]:
         保存的文件路径列表
     """
     saved_files = []
-    with tempfile.TemporaryDirectory() as temp_dir:
+    temp_dir = tempfile.mkdtemp(prefix="scholarly-upload-")
+    try:
         for upload_file in files:
-            file_path = Path(temp_dir) / upload_file.filename
+            file_path = Path(temp_dir) / Path(upload_file.filename or "document").name
             with open(file_path, "wb") as f:
                 content = await upload_file.read()
                 f.write(content)
             saved_files.append(file_path)
+    except Exception:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
     return saved_files
 
 
@@ -63,7 +68,7 @@ def load_document(file_path: Path):
 
 def split_documents(documents, chunk_size: int = 2000, chunk_overlap: int = 500):
     """
-    将文档分割成块
+    将非 PDF 文档按字符长度分割成块；PDF 使用 paper_chunking。
     
     Args:
         documents: 文档列表

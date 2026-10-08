@@ -2,9 +2,11 @@
 import os
 import threading
 from pathlib import Path
+
 from langchain_chroma import Chroma
-from langchain_core.tools import BaseTool
 from langchain_openai import OpenAIEmbeddings
+
+from .hybrid_search import HybridRetriever
 
 # 统一的数据存储基础目录
 DATA_BASE_DIR = "./data"
@@ -29,17 +31,22 @@ def format_contexts(docs):
     for doc in docs:
         metadata = doc.metadata
         source = Path(str(metadata.get("source", "unknown"))).name
-        page = metadata.get("page")
-        if page is None:
+        page_start = metadata.get("page_start", metadata.get("page"))
+        page_end = metadata.get("page_end", page_start)
+        if page_start is None:
             page_label = ""
         else:
             try:
-                page_label = f", page {int(page) + 1}"
+                first = int(page_start) + 1
+                last = int(page_end) + 1
+                page_label = f", pages {first}-{last}" if last > first else f", page {first}"
             except (TypeError, ValueError):
-                page_label = f", page {page}"
+                page_label = f", page {page_start}"
+        section = metadata.get("section_path")
+        section_line = f"\nSection: {section}" if section and not doc.page_content.startswith(f"{section}\n\n") else ""
         preview = metadata.get("preview_path")
         preview_line = f"\nPage preview: {preview}" if preview else ""
-        contexts.append(f"Source: {source}{page_label}\n{doc.page_content}{preview_line}")
+        contexts.append(f"Source: {source}{page_label}{section_line}\n{doc.page_content}{preview_line}")
     return "\n\n".join(contexts)
 
 
@@ -160,9 +167,9 @@ def _get_retriever():
 
 def load_vector_db():
     """
-    加载向量数据库和 Qdrant 
-    通过环境变量 VECTOR_DB_TYPE 选择数据库类型
-    默认路径统一使用 vector_databases 文件夹
+    加载 Chroma 或 Qdrant，并统一包装为混合检索器。
+
+    通过 VECTOR_DB_TYPE 选择数据库类型；未配置路径时使用默认知识库目录。
     """
     db_type = os.getenv("VECTOR_DB_TYPE", "chroma").lower() 
     embeddings = get_embeddings()
@@ -172,8 +179,13 @@ def load_vector_db():
 
     if db_type == "chroma":
         path = os.getenv("CHROMA_DB_PATH") or os.path.join(VECTOR_DB_BASE_DIR, "default_chroma")
-        return Chroma(embedding_function=embeddings, persist_directory=path).as_retriever(
-            search_type="mmr", search_kwargs={"k": 5, "fetch_k": 20}
+        vectorstore = Chroma(embedding_function=embeddings, persist_directory=path)
+        # MMR 保留候选片段多样性；HybridRetriever 再与 BM25 结果做 RRF 融合。
+        return HybridRetriever(
+            vectorstore.as_retriever(search_type="mmr", search_kwargs={"k": 20, "fetch_k": 40}),
+            vectorstore,
+            "chroma",
+            path,
         )
     if db_type != "qdrant":
         raise ValueError(f"Unsupported vector database type: {db_type}")
@@ -229,5 +241,9 @@ def load_vector_db():
             embedding=embeddings,
         )
         
-        retriever = vector_store.as_retriever(search_kwargs={"k": 5})
-        return retriever
+        return HybridRetriever(
+            vector_store.as_retriever(search_kwargs={"k": 20}),
+            vector_store,
+            "qdrant",
+            qdrant_path or os.path.join(VECTOR_DB_BASE_DIR, "default_qdrant"),
+        )

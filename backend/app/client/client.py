@@ -427,8 +427,8 @@ class AgentClient:
         self,
         files: List[tuple],  # List of (filename, file_content) tuples
         db_name: str = "chroma_db_uploaded",
-        chunk_size: int = 2000,
-        overlap: int = 500,
+        chunk_size: int = 512,
+        overlap: int = 64,
         use_local_embedding: bool = True,
         model_name: str = "BAAI/bge-m3",
         auto_switch: bool = True,
@@ -440,8 +440,8 @@ class AgentClient:
         Args:
             files: 文件列表，每个元素是 (filename, file_content) 元组
             db_name: 向量数据库名称
-            chunk_size: 文本块大小
-            overlap: 文本块重叠
+            chunk_size: PDF 片段的 Token 上限；其他文件按字符计数
+            overlap: PDF 片段的重叠 Token 数；其他文件按字符计数
             use_local_embeddings: 是否使用本地 embedding 模型
             model_name: 本地模型名称
         
@@ -455,7 +455,7 @@ class AgentClient:
         data = {
             "db_name": db_name,
             "chunk_size": chunk_size,
-            "overlap": overlap,
+            "chunk_overlap": overlap,
             "use_local_embedding": use_local_embedding,
             "model_name": model_name,
             "auto_switch": auto_switch,
@@ -480,8 +480,8 @@ class AgentClient:
         self,
         files: List[tuple],
         db_name: str = "chroma_db_uploaded",
-        chunk_size: int = 2000,
-        overlap: int = 500,
+        chunk_size: int = 512,
+        overlap: int = 64,
         use_local_embedding: bool = False,
         model_name: str = "BAAI/bge-small-en-v1.5",
         auto_switch: bool = True,
@@ -543,4 +543,3 @@ class AgentClient:
         """
         import asyncio
         return asyncio.run(self.aswitch_vector_db(db_path))
-

@@ -8,7 +8,7 @@ ENV UV_COMPILE_BYTECODE=1
 COPY pyproject.toml .
 COPY uv.lock .
 RUN pip install --no-cache-dir uv
-RUN uv sync --frozen --no-install-project --no-dev
+RUN uv sync --frozen --no-install-project --no-dev --extra pageindex
 
 COPY backend/app/agents/ ./agents/
 COPY backend/app/core/ ./core/
@@ -18,6 +18,8 @@ COPY backend/app/service/ ./service/
 COPY backend/app/run_service.py .
 
 # Create data directory for SQLite database
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data/vector_databases
+# 统一历史 data 路径与上传接口使用的 vector_databases 路径，并由 compose 持久化。
+RUN ln -s /app/data/vector_databases /app/vector_databases
 
-CMD ["python", "run_service.py"]
+CMD ["sh", "-c", "mkdir -p /app/data/vector_databases && exec python run_service.py"]

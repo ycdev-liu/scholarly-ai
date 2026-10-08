@@ -90,25 +90,26 @@ async def acall_model(state: AgentState, config: RunnableConfig) -> AgentState:
                 )
             ]
         }
-    # We return a list, because this will get added to the existing list
+    # LangGraph 会把返回列表追加到已有消息序列中。
     return {"messages": [response]}
 
 
-# Define the graph
+# 问答 Agent 的状态图：模型决定是否调用检索工具。
 agent = StateGraph[AgentState, AgentState, AgentState](AgentState)
 
 agent.add_node("model", acall_model)
 agent.add_node("tools", ToolNode(tools))
 
-# Set entry point to model
+# 从模型节点开始分析用户问题。
 agent.set_entry_point("model")
 
-# Always run "model" after "tools"
+# 工具执行完毕后回到模型节点，让模型使用检索证据继续回答。
 agent.add_edge("tools", "model")
 
 
-# After "model", if there are tool calls, run "tools". Otherwise END.
+# 模型提出工具调用时继续执行；否则结束本轮问答。
 def pending_tool_calls(state: AgentState) -> Literal["tools", "done"]:
+    """根据最新模型消息中的工具调用决定下一节点。"""
     last_message = state["messages"][-1]
     if not isinstance(last_message, AIMessage):
         raise TypeError(f"Expected AIMessage, got {type(last_message)}")
@@ -120,7 +121,6 @@ def pending_tool_calls(state: AgentState) -> Literal["tools", "done"]:
 agent.add_conditional_edges("model", pending_tool_calls, {"tools": "tools", "done": END})
 
 rag_assistant = agent.compile()
-
 
 
 

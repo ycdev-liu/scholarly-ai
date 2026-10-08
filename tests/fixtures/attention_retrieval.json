@@ -1,0 +1,12 @@
+[
+  {"id": "architecture", "query": "What is the encoder decoder architecture of the Transformer?", "pages": [2]},
+  {"id": "scaled_attention", "query": "Why are dot products scaled by the square root of d_k in attention?", "pages": [3]},
+  {"id": "multi_head", "query": "How many parallel attention heads does the base Transformer use?", "pages": [4]},
+  {"id": "masking", "query": "How does the decoder prevent positions from attending to future positions?", "pages": [4]},
+  {"id": "position", "query": "What sine and cosine positional encoding does the model use?", "pages": [5]},
+  {"id": "optimizer", "query": "What Adam optimizer beta values and warmup steps are used?", "pages": [6]},
+  {"id": "bleu", "query": "What BLEU scores are reported for English German and English French translation?", "pages": [7]},
+  {"id": "label_smoothing", "query": "What label smoothing epsilon value was applied?", "pages": [7]},
+  {"id": "ablation", "query": "What are the results of varying the number of attention heads and key dimensions?", "pages": [8]},
+  {"id": "parsing", "query": "What F1 result does the Transformer achieve on WSJ constituency parsing?", "pages": [9]}
+]

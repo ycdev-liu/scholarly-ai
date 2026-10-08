@@ -94,7 +94,7 @@ def openreview_search_func(
                     if len(all_notes) >= max_papers:
                         break
                     
-                    # Rate limiting
+                    # 控制请求频率，避免连续分页触发上游限流。
                     time.sleep(0.5)
                 except httpx.HTTPError as e:
                     # 如果某个会议搜索失败，继续尝试下一个
@@ -108,7 +108,7 @@ def openreview_search_func(
         # 限制返回的论文数量
         all_notes = all_notes[:max_papers]
         
-        # Format the results
+        # 统一返回结构，供 Agent 展示论文信息和下载链接。
         result = {
             "total_papers": len(all_notes),
             "papers": [

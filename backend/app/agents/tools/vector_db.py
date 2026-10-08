@@ -4,22 +4,25 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 from langchain_core.tools import BaseTool, tool
 
+from .hybrid_search import BM25Index
+from .pageindex_search import index_pdf, pageindex_enabled
+from .paper_chunking import split_paper_pages
 from .pdf_processing import load_paper_pages
 from .utils import (
-    VECTOR_DB_BASE_DIR,
     DOWNLOAD_PAPERS_DIR,
+    VECTOR_DB_BASE_DIR,
+    _get_retriever,
+    clear_retriever_cache,
     format_contexts,
     get_embeddings,
-    clear_retriever_cache,
-    _get_retriever,
 )
 
 
 def database_search_func(query: str) -> str:
-    """在chroma_db中搜索公司手册中的信息。"""
+    """在当前论文知识库中检索证据，并返回带来源信息的原文片段。"""
     try:
         # 使用缓存的 retriever，避免每次都重新创建数据库连接
         retriever = _get_retriever()
@@ -49,8 +52,8 @@ def create_vector_db_from_pdf_func(
     pdf_file_path: str,
     db_name: str = "",
     db_type: str = "",
-    chunk_size: int = 1200,
-    chunk_overlap: int = 180,
+    chunk_size: int = 512,
+    chunk_overlap: int = 64,
 ) -> str:
     """
     从PDF文件创建向量数据库。
@@ -65,8 +68,8 @@ def create_vector_db_from_pdf_func(
                       如果文件名不存在，会尝试在目录中查找包含关键词的PDF文件
         db_name: 数据库名称（可选，如果不提供或为空则自动生成，基于时间戳）
         db_type: 数据库类型 "chroma" 或 "qdrant"（可选，默认使用环境变量 VECTOR_DB_TYPE）
-        chunk_size: 文本块大小，默认 1200
-        chunk_overlap: 文本块重叠大小，默认 180
+        chunk_size: 每个论文片段最多包含的 Token 数，默认 512
+        chunk_overlap: 相邻片段的重叠 Token 数，默认 64
     
     Returns:
         str: JSON字符串，包含创建结果信息
@@ -233,15 +236,21 @@ def create_vector_db_from_pdf_func(
                 persist_directory=db_path
             )
         
-        # 分割文档
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap
-        )
-        chunks = text_splitter.split_documents(documents)
+        # 章节/小节 → 段落 → 超长段落 Token 限长切分，保留页码范围。
+        chunks = split_paper_pages(documents, max_tokens=chunk_size, overlap_tokens=chunk_overlap)
         
         # 添加到向量数据库
         vector_store.add_documents(chunks)
+        # 同一批片段同步写入 BM25，保证词项检索与向量库的内容一致。
+        BM25Index(db_path, collection_name if db_type == "qdrant" else None).add_documents(chunks)
+        pageindex_result = None
+        if pageindex_enabled():
+            # PageIndex 建树是可选步骤；失败信息单独返回，向量库仍可使用。
+            try:
+                indexed = index_pdf(db_path, pdf_file_path, collection_name if db_type == "qdrant" else None)
+                pageindex_result = {"success": True, "doc_id": indexed["doc_id"]}
+            except Exception as exc:
+                pageindex_result = {"success": False, "error": str(exc)}
         
         # 更新环境变量，使新创建的数据库成为当前使用的数据库
         os.environ["VECTOR_DB_TYPE"] = db_type
@@ -266,6 +275,7 @@ def create_vector_db_from_pdf_func(
             "total_chunks": len(chunks),
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
+            "pageindex": pageindex_result,
             "note": "数据库已自动切换为当前使用的数据库，Database_Search 工具现在可以使用它"
         }, indent=2, ensure_ascii=False)
         

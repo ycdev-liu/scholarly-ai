@@ -14,6 +14,49 @@ from service.utils import verify_bearer
 router = APIRouter(prefix="/api/vectordb", dependencies=[Depends(verify_bearer)])
 
 
+@router.get("/list", operation_id="list_vector_dbs")
+async def list_vector_dbs() -> dict:
+    """列出本地论文知识库，供 Vue 前端选择；不触发模型或索引加载。"""
+    db_type = os.getenv("VECTOR_DB_TYPE", "chroma").lower()
+    current_path = os.getenv(
+        "QDRANT_PATH" if db_type == "qdrant" else "CHROMA_DB_PATH",
+        "./vector_databases/default_qdrant" if db_type == "qdrant" else "./vector_databases/default_chroma",
+    )
+    roots = (Path("./vector_databases"), Path("./data/vector_databases"))
+    items: list[dict] = []
+    seen: set[Path] = set()
+    for root in roots:
+        if not root.is_dir():
+            continue
+        for path in sorted(root.iterdir()):
+            if not path.is_dir() or path.resolve() in seen:
+                continue
+            seen.add(path.resolve())
+            if (path / "chroma.sqlite3").exists():
+                item_type = "chroma"
+            elif (path / "config.json").exists():
+                item_type = "qdrant"
+            else:
+                continue
+            source_dir = path / "sources"
+            items.append({
+                "name": path.name,
+                "db_type": item_type,
+                "db_path": str(path),
+                "collection_name": "documents" if item_type == "qdrant" else None,
+                "source_count": sum(1 for item in source_dir.iterdir() if item.is_file()) if source_dir.is_dir() else 0,
+                "has_bm25": (path / "bm25.sqlite3").exists(),
+            })
+    return {
+        "items": items,
+        "current": {
+            "db_type": db_type,
+            "db_path": current_path,
+            "collection_name": os.getenv("QDRANT_COLLECTION", "documents") if db_type == "qdrant" else None,
+        },
+    }
+
+
 def create_vector_store(
     db_type: str,
     db_path: Path,
@@ -33,6 +76,13 @@ def create_vector_store(
     """
     db_type = db_type.lower()
     collection_name = None
+
+    if db_type == "chroma":
+        from langchain_chroma import Chroma
+
+        return Chroma(embedding_function=embeddings, persist_directory=str(db_path)), None
+    if db_type != "qdrant":
+        return None, None
     
     
     try:
@@ -51,7 +101,7 @@ def create_vector_store(
     
     embedding_dim = len(embeddings.embed_query("test"))
     
-    collection_name = "documents"
+    collection_name = db_name if qdrant_url else "documents"
     try:
         client.get_collection(collection_name)
     except Exception:

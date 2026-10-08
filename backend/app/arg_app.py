@@ -241,21 +241,21 @@ async def main() -> None:
             )
             
             chunk_size = st.slider(
-                "文本块大小",
-                min_value=500,
-                max_value=5000,
-                value=2000,
-                step=500,
-                help="每个文本块的最大字符数"
+                "PDF 片段大小（Token）",
+                min_value=128,
+                max_value=2048,
+                value=512,
+                step=128,
+                help="PDF 按章节和段落切分，超长段落按此 Token 上限继续切分"
             )
             
             overlap = st.slider(
-                "文本块重叠",
+                "片段重叠（Token）",
                 min_value=0,
-                max_value=1000,
-                value=500,
-                step=100,
-                help="相邻文本块之间的重叠字符数"
+                max_value=min(256, chunk_size - 32),
+                value=64,
+                step=32,
+                help="PDF 片段的重叠 Token 数；非 PDF 文件仍按字符计数"
             )
             
             embedding_provider = os.getenv("EMBEDDING_PROVIDER", "").lower()
@@ -737,8 +737,8 @@ async def handle_sub_agent_msgs(messages_agen, status, is_new):
 async def create_vector_db_from_files(
     uploaded_files: list,
     db_name: str = None,  # 如果为 None，将自动生成名称
-    chunk_size: int = 2000,
-    overlap: int = 500,
+    chunk_size: int = 512,
+    overlap: int = 64,
     use_local_embedding: bool = True,  # 修复：改为单数
     model_name: str = "BAAI/bge-m3",  # 新增
     auto_switch: bool = True,  # 新增

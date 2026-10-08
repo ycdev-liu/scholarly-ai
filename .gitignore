@@ -210,6 +210,9 @@ logs/
 # OS specific
 Thumbs.db
 .DS_Store
+# Vue 前端构建产物
+frontend/node_modules/
+frontend/dist/
 # 用户数据目录
 data/
 

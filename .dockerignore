@@ -11,3 +11,5 @@ venv
 .venv
 *.db
 privatecredentials/*
+frontend/node_modules
+frontend/dist
